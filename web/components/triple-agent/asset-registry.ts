@@ -44,12 +44,12 @@ export const art = {
   ambassador: { src: "/triple-agent/art/ambassador.png", width: 586, height: 677 },
   brig: { src: "/triple-agent/art/brig.png", width: 544, height: 424 },
   playAgain: { src: "/triple-agent/art/play-again.png", width: 354, height: 357 },
-  roleRogueAgent: { src: "/triple-agent/art/role-rogue-agent.png", width: 403, height: 409 },
-  roleTripleAgent: { src: "/triple-agent/art/role-triple-agent.png", width: 428, height: 451 },
-  roleDeepCover: { src: "/triple-agent/art/role-deep-cover-lying-red-256.png", width: 453, height: 482 },
-  roleSuspicious: { src: "/triple-agent/art/role-suspicious-lying-blue-206.png", width: 453, height: 482 },
-  roleServiceLoyalist: { src: "/triple-agent/art/role-service-loyalist-loyal-blue-234.png", width: 401, height: 491 },
-  roleVirusLoyalist: { src: "/triple-agent/art/role-virus-loyalist-loyal-red-247.png", width: 401, height: 491 },
+  roleRogueAgent: { src: "/triple-agent/art/role-rogue-agent-black.png", width: 403, height: 409 },
+  roleTripleAgent: { src: "/triple-agent/art/role-triple-agent-black.png", width: 428, height: 451 },
+  roleDeepCover: { src: "/triple-agent/art/role-deep-cover-lying-red-256-black.png", width: 453, height: 482 },
+  roleSuspicious: { src: "/triple-agent/art/role-suspicious-lying-blue-206-black.png", width: 453, height: 482 },
+  roleServiceLoyalist: { src: "/triple-agent/art/role-service-loyalist-loyal-blue-234-black.png", width: 401, height: 491 },
+  roleVirusLoyalist: { src: "/triple-agent/art/role-virus-loyalist-loyal-red-247-black.png", width: 401, height: 491 },
 } as const;
 
 export type ArtName = keyof typeof art;
