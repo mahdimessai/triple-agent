@@ -543,3 +543,59 @@ func TestLobbyEndpointsRequirePlayerName(t *testing.T) {
 		t.Fatalf("join status = %d, want %d", joinResp.StatusCode, http.StatusBadRequest)
 	}
 }
+
+func TestWebSocketDiscussionTimerConfiguration(t *testing.T) {
+	handler := NewHandler(admission.NewStore(), room.NewManager())
+	mux := http.NewServeMux()
+	mux.HandleFunc("POST /api/lobbies", handler.CreateLobby)
+	mux.HandleFunc("GET /ws", handler.WebSocket)
+	server := httptest.NewServer(mux)
+	defer server.Close()
+
+	response, err := http.Post(server.URL+"/api/lobbies", "application/json", strings.NewReader(`{"player_name":"Host"}`))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer response.Body.Close()
+	var lobbyResponse lobbyResponse
+	if err := json.NewDecoder(response.Body).Decode(&lobbyResponse); err != nil {
+		t.Fatal(err)
+	}
+
+	wsURL := "ws" + strings.TrimPrefix(server.URL, "http") + "/ws?" + url.Values{
+		"room_id":   []string{string(lobbyResponse.RoomID)},
+		"player_id": []string{string(lobbyResponse.PlayerID)},
+	}.Encode()
+	connection, _, err := websocket.DefaultDialer.Dial(wsURL, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer connection.Close()
+
+	initial := authenticateConnection(t, connection, lobbyResponse.ReconnectToken)
+
+	// Configure discussion timer to 420 seconds
+	if err := connection.WriteJSON(map[string]any{
+		"kind":                     domain.CommandSetDiscussionTimer,
+		"request_id":               "req-timer-1",
+		"expected_version":         initial.Public.Version,
+		"discussion_timer_enabled": true,
+		"discussion_seconds":       420,
+	}); err != nil {
+		t.Fatal(err)
+	}
+	var projection domain.Projection
+	if err := connection.ReadJSON(&projection); err != nil {
+		t.Fatal(err)
+	}
+	var ack map[string]any
+	if err := connection.ReadJSON(&ack); err != nil {
+		t.Fatal(err)
+	}
+	if ack["type"] != "command.ack" || ack["ok"] != true {
+		t.Fatalf("ack = %#v", ack)
+	}
+	if projection.Public.Settings.DiscussionSeconds != 420 || !projection.Public.Settings.DiscussionTimerEnabled {
+		t.Fatalf("projection settings = %#v, want discussion_seconds=420 enabled=true", projection.Public.Settings)
+	}
+}

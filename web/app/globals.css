@@ -862,6 +862,9 @@ a {
   display: grid;
   min-height: 13rem;
   grid-template-rows: auto auto 1fr auto;
+  /* The implicit auto column would size to the footer's min-content width and
+     spill past the border; minmax(0, 1fr) caps it so the footer can truncate. */
+  grid-template-columns: minmax(0, 1fr);
   gap: 0.65rem;
   width: 100%;
   padding: 0.65rem;
@@ -869,7 +872,7 @@ a {
   background: var(--ta-paper-soft);
   color: var(--ta-ink);
   text-align: left;
-  transition: transform 160ms ease, background 160ms ease, box-shadow 160ms ease, border-color 160ms ease;
+  transition: none;
 }
 
 .ta-operation-card[data-enabled="true"] {
@@ -903,13 +906,11 @@ a {
 /* A switched-off operation stays readable but visibly out of the deck. */
 .ta-operation-card[data-enabled="false"] {
   opacity: 0.55;
-  filter: grayscale(1);
 }
 
 .ta-operation-card[data-enabled="false"]:hover:not(:disabled),
 .ta-operation-card[data-enabled="false"]:focus-visible:not(:disabled) {
   opacity: 1;
-  filter: none;
 }
 
 .ta-stepper {

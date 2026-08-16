@@ -82,7 +82,7 @@ func (h *Handler) WebSocket(w http.ResponseWriter, r *http.Request) {
 		}
 		command := domain.Command{
 			RequestID: message.RequestID, ActorID: playerID, ExpectedVersion: message.ExpectedVersion,
-			Kind: domain.CommandKind(message.Kind), OperationKind: message.OperationKind, OperationEnabled: message.OperationEnabled, RoleID: message.RoleID, RoleEnabled: message.RoleEnabled, DiscussionTimerEnabled: message.DiscussionTimerEnabled, VirusCount: message.VirusCount, TargetID: string(message.TargetID), TargetIDs: toIDs(message.TargetIDs), Choice: message.Choice,
+			Kind: domain.CommandKind(message.Kind), OperationKind: message.OperationKind, OperationEnabled: message.OperationEnabled, RoleID: message.RoleID, RoleEnabled: message.RoleEnabled, DiscussionTimerEnabled: message.DiscussionTimerEnabled, DiscussionSeconds: message.DiscussionSeconds, VirusCount: message.VirusCount, TargetID: string(message.TargetID), TargetIDs: toIDs(message.TargetIDs), Choice: message.Choice,
 		}
 		projection, replayed, commandErr := activeRoom.SubmitForSession(sessionID, command)
 		if replayed && commandErr == nil {
@@ -122,6 +122,8 @@ type commandMessage struct {
 	RoleEnabled bool `json:"role_enabled"`
 	// DiscussionTimerEnabled controls the lobby's discussion timer setting.
 	DiscussionTimerEnabled bool `json:"discussion_timer_enabled"`
+	// DiscussionSeconds sets how many seconds the discussion runs for.
+	DiscussionSeconds int `json:"discussion_seconds"`
 	// VirusCount controls how many players begin on the VIRUS faction.
 	VirusCount int `json:"virus_count"`
 	// TargetID is the single target selected by a command.

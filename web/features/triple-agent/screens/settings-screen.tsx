@@ -81,19 +81,35 @@ export function SettingsScreen({ timerEnabled, setTimerEnabled, projection, live
   const canEdit = Boolean(liveSession && isHost && projection?.public.phase === "LOBBY");
   const configuredOperations = operationCatalog.filter((operation) => operation.status !== "recovered-only" && liveOperationIDs.has(operation.id));
 
-  // The deck reads top to bottom in the order a host cares about: the plain
-  // operations that ship on, then the one Hidden Agenda slot with its envelopes
-  // underneath it, then Expansion Pack 01, which ships off, at the very end.
+  // Operations deck contains all standard and expansion operations together.
+  // Hidden Agenda is one group dealt under one cover, so its envelopes live in
+  // the Hidden Agenda section below where they emanate from the master cover.
   const hiddenAgendaCover = getOperation("HiddenAgenda");
   const hiddenAgendaMembers = configuredOperations.filter((operation) => hiddenAgendaMemberIDs.has(operation.id));
-  const standardOperations = configuredOperations.filter((operation) => !hiddenAgendaMemberIDs.has(operation.id) && !packOperationIDs.has(operation.id));
-  const packOperations = configuredOperations.filter((operation) => packOperationIDs.has(operation.id));
+  const deckOperations = configuredOperations.filter((operation) => !hiddenAgendaMemberIDs.has(operation.id) && operation.id !== "HiddenAgenda");
+
+  // Sort operations by enabled status first so active operations are at the top of the deck
+  const sortedDeckOperations = [...deckOperations].sort((a, b) => {
+    const aEnabled = enabledIDs.has(a.id);
+    const bEnabled = enabledIDs.has(b.id);
+    if (aEnabled && !bEnabled) return -1;
+    if (!aEnabled && bEnabled) return 1;
+    return 0;
+  });
+
+  const sortedHiddenAgendaMembers = [...hiddenAgendaMembers].sort((a, b) => {
+    const aEnabled = enabledIDs.has(a.id);
+    const bEnabled = enabledIDs.has(b.id);
+    if (aEnabled && !bEnabled) return -1;
+    if (!aEnabled && bEnabled) return 1;
+    return 0;
+  });
 
   // Hidden Agenda counts as one operation in the pool, so the deck counter and
   // the cover's own state follow the group rather than its members.
   const hiddenAgendaEnabled = hiddenAgendaMembers.some((operation) => enabledIDs.has(operation.id));
-  const deckSize = standardOperations.length + packOperations.length + 1;
-  const activeCount = standardOperations.filter((operation) => enabledIDs.has(operation.id)).length + packOperations.filter((operation) => enabledIDs.has(operation.id)).length + (hiddenAgendaEnabled ? 1 : 0);
+  const deckSize = deckOperations.length + 1;
+  const activeCount = deckOperations.filter((operation) => enabledIDs.has(operation.id)).length + (hiddenAgendaEnabled ? 1 : 0);
 
   function toggleOperation(operationID: string) {
     if (!canEdit) return;
@@ -118,6 +134,7 @@ export function SettingsScreen({ timerEnabled, setTimerEnabled, projection, live
   const [localVirusCount, setLocalVirusCount] = useState(0);
   const currentSeconds = projection?.public.settings.discussion_seconds ?? localSeconds;
   const currentVirusCount = projection?.public.settings.virus_count ?? localVirusCount;
+  const isTimerActive = projection ? projection.public.settings.discussion_timer_enabled : timerEnabled;
   const [localRoles, setLocalRoles] = useState<Set<string>>(() => new Set());
   const enabledRoleIDs = new Set(projection?.public.settings.enabled_roles ?? [...localRoles]);
   const controlsLocked = liveSession && !canEdit;
@@ -178,13 +195,13 @@ export function SettingsScreen({ timerEnabled, setTimerEnabled, projection, live
         <div className="grid gap-3 sm:grid-cols-2">
           <Stepper
             label="DISCUSSION TIMER"
-            value={timerEnabled ? formatDuration(currentSeconds) : "OFF"}
-            hint={timerEnabled ? `Step below ${formatDuration(MIN_DISCUSSION_SECONDS)} to run discussion untimed. Longest is ${formatDuration(MAX_DISCUSSION_SECONDS)}.` : "Discussion runs untimed until the host moves the room on. Step up to put it back on a clock."}
+            value={isTimerActive ? formatDuration(currentSeconds) : "OFF"}
+            hint={isTimerActive ? `Step below ${formatDuration(MIN_DISCUSSION_SECONDS)} to run discussion untimed. Longest is ${formatDuration(MAX_DISCUSSION_SECONDS)}.` : "Discussion runs untimed until the host moves the room on. Step up to put it back on a clock."}
             disabled={controlsLocked}
-            canDecrease={timerEnabled}
-            canIncrease={!timerEnabled || currentSeconds < MAX_DISCUSSION_SECONDS}
+            canDecrease={isTimerActive}
+            canIncrease={!isTimerActive || currentSeconds < MAX_DISCUSSION_SECONDS}
             onDecrease={() => setDuration(currentSeconds - DISCUSSION_STEP_SECONDS)}
-            onIncrease={() => setDuration(timerEnabled ? currentSeconds + DISCUSSION_STEP_SECONDS : currentSeconds)}
+            onIncrease={() => setDuration(isTimerActive ? currentSeconds + DISCUSSION_STEP_SECONDS : Math.max(MIN_DISCUSSION_SECONDS, currentSeconds))}
           />
           <Stepper
             label="VIRUS TEAM SIZE"
@@ -245,9 +262,8 @@ export function SettingsScreen({ timerEnabled, setTimerEnabled, projection, live
         </div>
       </div>
 
-      {/* Every operation the room can deal, in one deck. Hidden Agenda holds a
-          single slot with its envelopes nested under it, and Expansion Pack 01,
-          which ships off, sits at the end. */}
+      {/* Every operation the room can deal in the main operations deck,
+          plus Hidden Agenda centered below with all envelopes emanating from it. */}
       <div className="ta-paper p-4">
         <div className="mb-4 flex items-end justify-between gap-3">
           <div>
@@ -259,11 +275,11 @@ export function SettingsScreen({ timerEnabled, setTimerEnabled, projection, live
           </span>
         </div>
         <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-3">
-          {standardOperations.map((operation) => (
+          {sortedDeckOperations.map((operation) => (
             <OperationCard
               key={operation.id}
               operation={operation}
-              label={operation.category.toUpperCase()}
+              label={packOperationIDs.has(operation.id) ? "PACK 01" : operation.category.toUpperCase()}
               enabled={enabledIDs.has(operation.id)}
               disabled={lockedOff(operation.id)}
               onToggle={() => toggleOperation(operation.id)}
@@ -271,66 +287,67 @@ export function SettingsScreen({ timerEnabled, setTimerEnabled, projection, live
           ))}
         </div>
 
-        {/* Hidden Agenda is one operation with several possible contents, so it
-            takes one slot in the deck and its envelopes live inside that slot
-            instead of competing with the named operations for a draw. */}
-        <div className="mt-4 border-2 border-black/25 p-3">
-          <div className="mb-3 flex items-end justify-between gap-3">
+        {/* Hidden Agenda is centered in the box with all envelopes emanating from it. */}
+        <div className="mt-6 border-2 border-black/25 bg-black/[0.02] p-4">
+          <div className="mb-4 flex flex-col gap-2 sm:flex-row sm:items-end sm:justify-between">
             <div>
               <p className="ta-condensed text-xs tracking-[0.16em]">HIDDEN AGENDA</p>
-              <p className="ta-condensed mt-1 max-w-prose text-sm leading-tight">
+              <p className="ta-condensed mt-1 max-w-prose text-sm leading-tight text-black/75">
                 One operation dealt under one cover. The room only hears that new orders arrived; the server picks which of the envelopes below the recipient
-                actually opens. Switch the cover off to keep every hidden agenda out of the match, or leave individual envelopes off to narrow what it can be.
+                actually opens. Switch the master cover off to disable all hidden agendas, or toggle individual envelopes.
               </p>
             </div>
-            <span className="ta-condensed shrink-0 text-xs tracking-[0.12em]">
-              {hiddenAgendaMembers.filter((operation) => enabledIDs.has(operation.id)).length} / {hiddenAgendaMembers.length} ENVELOPES
+            <span className="ta-condensed shrink-0 text-xs tracking-[0.12em] text-black/70">
+              {sortedHiddenAgendaMembers.filter((operation) => enabledIDs.has(operation.id)).length} / {sortedHiddenAgendaMembers.length} ENVELOPES ACTIVE
             </span>
           </div>
-          <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-3">
-            <OperationCard
-              operation={hiddenAgendaCover}
-              label="THE COVER"
-              enabled={hiddenAgendaEnabled}
-              disabled={!canEdit}
-              onToggle={toggleHiddenAgenda}
-            />
-            {hiddenAgendaMembers.map((operation) => (
-              <OperationCard
-                key={operation.id}
-                operation={operation}
-                label="ENVELOPE"
-                enabled={enabledIDs.has(operation.id)}
-                disabled={lockedOff(operation.id)}
-                onToggle={() => toggleOperation(operation.id)}
-              />
-            ))}
-          </div>
-        </div>
 
-        {/* Pack 01 ships off, so it sits last and reads as dimmed until a host
-            switches something on. */}
-        <div className="mt-4 border-2 border-black/25 p-3">
-          <div className="mb-3 flex items-end justify-between gap-3">
-            <div>
-              <p className="ta-condensed text-xs tracking-[0.16em]">EXPANSION PACK 01</p>
-              <p className="ta-condensed mt-1 max-w-prose text-sm leading-tight">Off by default. Switch these on to add them to the deck for this room.</p>
-            </div>
-            <span className="ta-condensed shrink-0 text-xs tracking-[0.12em]">
-              {packOperations.filter((operation) => enabledIDs.has(operation.id)).length} / {packOperations.length} ACTIVE
-            </span>
-          </div>
-          <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-3">
-            {packOperations.map((operation) => (
+          <div className="flex flex-col items-center">
+            {/* Master Cover Card in the Middle */}
+            <div className="w-full max-w-xs">
               <OperationCard
-                key={operation.id}
-                operation={operation}
-                label="PACK 01"
-                enabled={enabledIDs.has(operation.id)}
-                disabled={lockedOff(operation.id)}
-                onToggle={() => toggleOperation(operation.id)}
+                operation={hiddenAgendaCover}
+                label="THE MASTER COVER"
+                enabled={hiddenAgendaEnabled}
+                disabled={!canEdit}
+                onToggle={toggleHiddenAgenda}
               />
-            ))}
+            </div>
+
+            {/* Visual connector lines emanating from cover. The tick row mirrors the
+                envelope grid's columns so the legs land under the cards at every width. */}
+            <div className="my-3 flex w-full flex-col items-center" aria-hidden="true">
+              <div className="h-4 w-0.5 bg-black/40" />
+              {/* One column: a bare stem reads better than a bracket over a single stack. */}
+              <div className="hidden w-full flex-col items-center sm:flex">
+                <div className="h-2 w-full border-t-2 border-black/40" />
+                <div className="grid h-2 w-full grid-cols-2 gap-3 overflow-hidden lg:grid-cols-3 xl:grid-cols-5">
+                  {sortedHiddenAgendaMembers.map((operation) => (
+                    <div className="flex justify-center" key={operation.id}>
+                      <div className="h-2 w-0.5 bg-black/40" />
+                    </div>
+                  ))}
+                </div>
+              </div>
+              <span className="ta-condensed mt-1 max-w-full text-center text-[0.6rem] font-bold tracking-[0.12em] text-black/60 uppercase sm:text-[0.65rem] sm:tracking-[0.2em]">
+                <span className="whitespace-nowrap">▼ Secret envelopes</span>{" "}
+                <span className="whitespace-nowrap">emanating from cover ▼</span>
+              </span>
+            </div>
+
+            {/* Envelopes radiating/emanating below */}
+            <div className="grid w-full gap-3 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-5">
+              {sortedHiddenAgendaMembers.map((operation) => (
+                <OperationCard
+                  key={operation.id}
+                  operation={operation}
+                  label="ENVELOPE"
+                  enabled={enabledIDs.has(operation.id)}
+                  disabled={lockedOff(operation.id)}
+                  onToggle={() => toggleOperation(operation.id)}
+                />
+              ))}
+            </div>
           </div>
         </div>
       </div>

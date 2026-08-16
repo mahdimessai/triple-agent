@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useState, useSyncExternalStore } from "react";
 
 type InstallChoice = {
   outcome: "accepted" | "dismissed";
@@ -14,7 +14,10 @@ interface BeforeInstallPromptEvent extends Event {
 
 const DISMISS_KEY = "triple-agent-install-dismissed-v1";
 
+const emptySubscribe = () => () => {};
+
 function isIOSDevice() {
+  if (typeof window === "undefined") return false;
   const userAgent = navigator.userAgent;
   const isAppleMobile = /iPhone|iPad|iPod/i.test(userAgent);
   const isIPadDesktopMode = navigator.platform === "MacIntel" && navigator.maxTouchPoints > 1;
@@ -22,11 +25,13 @@ function isIOSDevice() {
 }
 
 function isStandalone() {
+  if (typeof window === "undefined") return false;
   const appleStandalone = Boolean((navigator as Navigator & { standalone?: boolean }).standalone);
   return window.matchMedia("(display-mode: standalone)").matches || appleStandalone;
 }
 
 function wasDismissed() {
+  if (typeof window === "undefined") return false;
   try {
     return window.localStorage.getItem(DISMISS_KEY) === "1";
   } catch {
@@ -44,15 +49,17 @@ function rememberDismissal() {
 
 export function InstallApp() {
   const [installPrompt, setInstallPrompt] = useState<BeforeInstallPromptEvent | null>(null);
-  const [isIOS] = useState(() => typeof window !== "undefined" && isIOSDevice());
-  // The server render cannot inspect the display mode. On the client, this
-  // initializer can do that before the one-time browser event subscriptions
-  // are installed, so the effect does not need a synchronous state update.
-  const [isInstalled, setIsInstalled] = useState(() => typeof window !== "undefined" && isStandalone());
+  const isIOS = useSyncExternalStore(emptySubscribe, isIOSDevice, () => false);
+  const isBrowserStandalone = useSyncExternalStore(emptySubscribe, isStandalone, () => false);
+  const isBrowserDismissed = useSyncExternalStore(emptySubscribe, wasDismissed, () => false);
+  const [installedState, setInstalledState] = useState(false);
   const [hasEngaged, setHasEngaged] = useState(false);
-  const [dismissed, setDismissed] = useState(() => typeof window !== "undefined" && wasDismissed());
+  const [dismissedState, setDismissedState] = useState(false);
   const [showIOSHelp, setShowIOSHelp] = useState(false);
   const [installing, setInstalling] = useState(false);
+
+  const isInstalled = installedState || isBrowserStandalone;
+  const dismissed = dismissedState || isBrowserDismissed;
 
   useEffect(() => {
     if (isStandalone()) {
@@ -65,7 +72,7 @@ export function InstallApp() {
       setInstallPrompt(event as BeforeInstallPromptEvent);
     };
     const handleInstalled = () => {
-      setIsInstalled(true);
+      setInstalledState(true);
       setInstallPrompt(null);
     };
 
@@ -84,7 +91,7 @@ export function InstallApp() {
 
   function dismiss() {
     rememberDismissal();
-    setDismissed(true);
+    setDismissedState(true);
     setShowIOSHelp(false);
   }
 
@@ -94,7 +101,7 @@ export function InstallApp() {
     setInstalling(true);
     try {
       const choice = await installPrompt.prompt();
-      if (choice.outcome === "accepted") setIsInstalled(true);
+      if (choice.outcome === "accepted") setInstalledState(true);
     } catch {
       // The browser owns the prompt UI; a dismissed or unavailable prompt is not an app error.
     } finally {

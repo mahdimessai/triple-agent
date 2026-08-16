@@ -169,6 +169,7 @@ export function DiscussionScreen({
   projection?: RoomProjection;
   onNext: () => void;
 }) {
+  const isTimerActive = projection ? projection.public.settings.discussion_timer_enabled : timerEnabled;
   const totalPlayers = projection?.public.players.length ?? 5;
   const readyCount = projection?.public.discussion_ready_count ?? 0;
   const durationSeconds = projection?.public.settings.discussion_seconds ?? 300;
@@ -184,7 +185,7 @@ export function DiscussionScreen({
 
       <div className="ta-paper p-5 text-center">
         <AnimatedStopwatch
-          enabled={timerEnabled}
+          enabled={isTimerActive}
           deadline={projection?.public.discussion_deadline}
           durationSeconds={durationSeconds}
         />
