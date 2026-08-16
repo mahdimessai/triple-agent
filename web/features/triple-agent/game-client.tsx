@@ -6,7 +6,7 @@ import type { OperationId } from "@/components/triple-agent/operation-catalog";
 import { GameShell } from "@/features/triple-agent/components/game-shell";
 import { TitleScreen } from "@/features/triple-agent/screens/title-screen";
 import { operationIdForServerKind, type CommandPayload, type CommandSender, type ScreenId } from "@/features/triple-agent/model/screen";
-import type { RoomProjection } from "@/features/triple-agent/protocol/types";
+import type { ClientCommand, RoomProjection } from "@/features/triple-agent/protocol/types";
 import { useRoomSession } from "@/features/triple-agent/session/use-room-session";
 
 function ScreenLoading() {
@@ -23,7 +23,7 @@ const ResultsScreen = dynamic(() => import("@/features/triple-agent/screens/resu
 const RoleScreen = dynamic(() => import("@/features/triple-agent/screens/role-screen").then((module) => module.RoleScreen), { loading: ScreenLoading });
 const SettingsScreen = dynamic(() => import("@/features/triple-agent/screens/settings-screen").then((module) => module.SettingsScreen), { loading: ScreenLoading });
 
-function ScreenContent({ screen, playerName, setPlayerName, roomCode, setRoomCode, roomCodeCopied, copyRoomCode, timerEnabled, setTimerEnabled, navigate, operationId, setOperationId, projection, liveSession, onCommand, onCreateRoom, onJoinRoom, onLeave, leaving, error }: {
+function ScreenContent({ screen, playerName, setPlayerName, roomCode, setRoomCode, roomCodeCopied, copyRoomCode, timerEnabled, setTimerEnabled, navigate, operationId, setOperationId, projection, liveSession, onCommand, pendingCommand, roomAction, onCreateRoom, onJoinRoom, onLeave, leaving, error }: {
   screen: ScreenId;
   playerName: string;
   setPlayerName: (value: string) => void;
@@ -39,6 +39,8 @@ function ScreenContent({ screen, playerName, setPlayerName, roomCode, setRoomCod
   projection?: RoomProjection;
   liveSession?: boolean;
   onCommand?: CommandSender;
+  pendingCommand?: ClientCommand["kind"];
+  roomAction?: "creating" | "joining";
   onCreateRoom: () => void;
   onJoinRoom: () => void;
   onLeave: () => void;
@@ -47,16 +49,16 @@ function ScreenContent({ screen, playerName, setPlayerName, roomCode, setRoomCod
 }) {
   switch (screen) {
     case "title":
-    case "join": return <TitleScreen playerName={playerName} setPlayerName={setPlayerName} roomCode={roomCode} setRoomCode={setRoomCode} joining={screen === "join"} onStart={onCreateRoom} onJoin={onJoinRoom} onOpenJoin={() => navigate("join")} onCancelJoin={() => navigate("title")} error={error} />;
-    case "lobby": return <LobbyScreen roomCode={roomCode} roomCodeCopied={roomCodeCopied} copyRoomCode={copyRoomCode} livePlayers={projection?.public.players} hostId={projection?.public.host_id} selfId={projection?.private.player_id} minPlayers={projection?.public.settings.min_players} liveSession={liveSession} isHost={projection?.public.host_id === projection?.private.player_id} canReady={Boolean(projection)} isReady={projection?.public.players.find((player) => player.id === projection.private.player_id)?.ready} onReady={() => onCommand?.("lobby.ready")} onStart={() => projection ? onCommand?.("match.start") : navigate("mission")} onLeave={onLeave} leaving={leaving} error={error} />;
-    case "settings": return <SettingsScreen timerEnabled={timerEnabled} setTimerEnabled={setTimerEnabled} projection={projection} liveSession={liveSession} isHost={projection?.public.host_id === projection?.private.player_id} onCommand={onCommand} error={error} />;
+    case "join": return <TitleScreen playerName={playerName} setPlayerName={setPlayerName} roomCode={roomCode} setRoomCode={setRoomCode} joining={screen === "join"} roomAction={roomAction} onStart={onCreateRoom} onJoin={onJoinRoom} onOpenJoin={() => navigate("join")} onCancelJoin={() => navigate("title")} error={error} />;
+    case "lobby": return <LobbyScreen roomCode={roomCode} roomCodeCopied={roomCodeCopied} copyRoomCode={copyRoomCode} livePlayers={projection?.public.players} hostId={projection?.public.host_id} selfId={projection?.private.player_id} minPlayers={projection?.public.settings.min_players} liveSession={liveSession} isHost={projection?.public.host_id === projection?.private.player_id} canReady={Boolean(projection)} isReady={projection?.public.players.find((player) => player.id === projection.private.player_id)?.ready} readyLoading={pendingCommand === "lobby.ready"} startLoading={pendingCommand === "match.start"} onReady={() => onCommand?.("lobby.ready")} onStart={() => projection ? onCommand?.("match.start") : navigate("mission")} onLeave={onLeave} leaving={leaving} error={error} />;
+    case "settings": return <SettingsScreen timerEnabled={timerEnabled} setTimerEnabled={setTimerEnabled} projection={projection} liveSession={liveSession} isHost={projection?.public.host_id === projection?.private.player_id} onCommand={onCommand} pending={Boolean(pendingCommand)} error={error} />;
     case "mission": return <MissionScreen onNext={() => navigate("role")} />;
-    case "role": return <RoleScreen faction={projection?.private.faction} roleId={projection?.private.role} roleName={projection?.private.role_name} roleDescription={projection?.private.role_description} roleEffect={projection?.private.role_effect} virusRoster={projection?.private.virus_roster} virusTeamSize={projection?.private.virus_team_size} canSubmit={projection?.private.can_submit} waitingOn={projection?.public.pending_role_acks} onNext={() => projection ? onCommand?.("role.acknowledge") : navigate("operation")} />;
-    case "operation": return <OperationScreen key={`${operationId}:${projection?.public.operation?.kind ?? ""}:${projection?.public.phase ?? ""}`} operationId={operationId} projection={projection} onNext={(targetIds, choice) => { if (!projection) navigate("discussion"); else if (projection.public.phase === "OPERATION_INPUT") onCommand?.("operation.resolve", { targetIds, choice }); else if (projection.public.phase === "OPERATION_RESULT") onCommand?.("operation.explain_done"); }} />;
-    case "interlude": return <InterludeScreen deadline={projection?.public.discussion_deadline} seconds={projection?.public.settings.interlude_seconds} isHost={projection?.public.host_id === projection?.private.player_id} onSkip={() => projection ? onCommand?.("interlude.advance") : navigate("discussion")} />;
-    case "discussion": return <DiscussionScreen timerEnabled={timerEnabled} projection={projection} canAdvance={!projection || projection.private.can_submit} onNext={() => projection ? onCommand?.("discussion.advance") : navigate("accusation")} />;
-    case "accusation": return <AccusationScreen projection={projection} onNext={(targetId) => projection ? onCommand?.("vote.submit", { targetId }) : navigate("results")} />;
-    case "results": return <ResultsScreen projection={projection} onRestart={() => projection ? onCommand?.("match.rematch") : navigate("lobby")} />;
+    case "role": return <RoleScreen faction={projection?.private.faction} roleId={projection?.private.role} roleName={projection?.private.role_name} roleDescription={projection?.private.role_description} roleEffect={projection?.private.role_effect} virusRoster={projection?.private.virus_roster} virusTeamSize={projection?.private.virus_team_size} canSubmit={projection?.private.can_submit} waitingOn={projection?.public.pending_role_acks} loading={pendingCommand === "role.acknowledge"} onNext={() => projection ? onCommand?.("role.acknowledge") : navigate("operation")} />;
+    case "operation": return <OperationScreen key={`${operationId}:${projection?.public.operation?.kind ?? ""}:${projection?.public.phase ?? ""}`} operationId={operationId} projection={projection} loading={pendingCommand === "operation.resolve" || pendingCommand === "operation.explain_done"} onNext={(targetIds, choice) => { if (!projection) navigate("discussion"); else if (projection.public.phase === "OPERATION_INPUT") onCommand?.("operation.resolve", { targetIds, choice }); else if (projection.public.phase === "OPERATION_RESULT") onCommand?.("operation.explain_done"); }} />;
+    case "interlude": return <InterludeScreen deadline={projection?.public.discussion_deadline} seconds={projection?.public.settings.interlude_seconds} isHost={projection?.public.host_id === projection?.private.player_id} loading={pendingCommand === "interlude.advance"} onSkip={() => projection ? onCommand?.("interlude.advance") : navigate("discussion")} />;
+    case "discussion": return <DiscussionScreen timerEnabled={timerEnabled} projection={projection} canAdvance={!projection || projection.private.can_submit} loading={pendingCommand === "discussion.advance"} onNext={() => projection ? onCommand?.("discussion.advance") : navigate("accusation")} />;
+    case "accusation": return <AccusationScreen projection={projection} loading={pendingCommand === "vote.submit"} onNext={(targetId) => projection ? onCommand?.("vote.submit", { targetId }) : navigate("results")} />;
+    case "results": return <ResultsScreen projection={projection} loading={pendingCommand === "match.rematch"} onRestart={() => projection ? onCommand?.("match.rematch") : navigate("lobby")} />;
   }
 }
 
@@ -74,7 +76,10 @@ export function GameClient() {
     session,
     projection,
     connectionState,
+    reconnecting,
     error,
+    roomAction,
+    pendingCommand,
     createRoom,
     joinRoom,
     leaveRoom,
@@ -122,5 +127,5 @@ export function GameClient() {
   }
 
   const liveOperationId = operationIdForServerKind(projection?.public.operation?.kind);
-  return <GameShell screen={screen} setScreen={setScreen} session={session} connectionState={connectionState}><ScreenContent screen={screen} playerName={playerName} setPlayerName={setPlayerName} roomCode={roomCode} setRoomCode={setRoomCode} roomCodeCopied={roomCodeCopied} copyRoomCode={() => void copyRoomCode()} timerEnabled={timerEnabled} setTimerEnabled={setTimerEnabled} navigate={setScreen} operationId={liveOperationId} setOperationId={setOperationId} projection={projection} liveSession={Boolean(session)} onCommand={sendCommand} onCreateRoom={() => void createRoom(playerName)} onJoinRoom={() => void joinRoom(playerName)} onLeave={() => void leaveRoom()} leaving={leaving} error={error} /></GameShell>;
+  return <GameShell screen={screen} setScreen={setScreen} session={session} connectionState={connectionState} reconnecting={reconnecting}><ScreenContent screen={screen} playerName={playerName} setPlayerName={setPlayerName} roomCode={roomCode} setRoomCode={setRoomCode} roomCodeCopied={roomCodeCopied} copyRoomCode={() => void copyRoomCode()} timerEnabled={timerEnabled} setTimerEnabled={setTimerEnabled} navigate={setScreen} operationId={liveOperationId} setOperationId={setOperationId} projection={projection} liveSession={Boolean(session)} onCommand={sendCommand} pendingCommand={pendingCommand} roomAction={roomAction} onCreateRoom={() => void createRoom(playerName)} onJoinRoom={() => void joinRoom(playerName)} onLeave={() => void leaveRoom()} leaving={leaving} error={error} /></GameShell>;
 }

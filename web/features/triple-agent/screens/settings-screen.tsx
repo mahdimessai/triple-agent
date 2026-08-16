@@ -105,7 +105,7 @@ const RoleCard = memo(function RoleCard({ role, enabled, disabled, onToggle }: {
   );
 });
 
-export function SettingsScreen({ timerEnabled, setTimerEnabled, projection, liveSession = false, isHost = false, onCommand, error }: { timerEnabled: boolean; setTimerEnabled: (value: boolean) => void; projection?: RoomProjection; liveSession?: boolean; isHost?: boolean; onCommand?: CommandSender; error?: string }) {
+export function SettingsScreen({ timerEnabled, setTimerEnabled, projection, liveSession = false, isHost = false, onCommand, pending = false, error }: { timerEnabled: boolean; setTimerEnabled: (value: boolean) => void; projection?: RoomProjection; liveSession?: boolean; isHost?: boolean; onCommand?: CommandSender; pending?: boolean; error?: string }) {
   const enabledIDs = new Set(projection?.public.settings.enabled_operations ?? operationCatalog.filter((operation) => operation.status === "enabled").map((operation) => operation.id));
   const canEdit = Boolean(liveSession && isHost && projection?.public.phase === "LOBBY");
   const configuredOperations = operationCatalog.filter((operation) => operation.status !== "recovered-only" && liveOperationIDs.has(operation.id));
@@ -160,7 +160,7 @@ export function SettingsScreen({ timerEnabled, setTimerEnabled, projection, live
   const isTimerActive = projection ? projection.public.settings.discussion_timer_enabled : timerEnabled;
   const [localRoles, setLocalRoles] = useState<Set<string>>(() => new Set());
   const enabledRoleIDs = new Set(projection?.public.settings.enabled_roles ?? [...localRoles]);
-  const controlsLocked = liveSession && !canEdit;
+  const controlsLocked = liveSession && (!canEdit || pending);
 
   /**
    * One step below the minimum turns the timer off rather than clamping, so the
@@ -212,7 +212,7 @@ export function SettingsScreen({ timerEnabled, setTimerEnabled, projection, live
       <div className="ta-paper p-4">
         <div className="mb-4">
           <p className="ta-condensed text-xs tracking-[0.16em]">MATCH SETUP</p>
-          <p className="ta-condensed text-sm">{controlsLocked ? "Only the host can change these before the match starts." : "Set the discussion length and how many agents work for VIRUS."}</p>
+            <p className="ta-condensed text-sm">{pending ? "Saving the room setting…" : controlsLocked ? "Only the host can change these before the match starts." : "Set the discussion length and how many agents work for VIRUS."}</p>
         </div>
         <div className="grid gap-3 sm:grid-cols-2">
           <Stepper

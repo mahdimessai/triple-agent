@@ -4,7 +4,7 @@ import { InkButton } from "@/components/ui/ink-button";
 import { PaperTitle } from "@/components/ui/paper-title";
 import type { Faction, RoomProjection } from "@/components/triple-agent/server-client";
 
-export function ResultsScreen({ projection, onRestart }: { projection?: RoomProjection; onRestart: () => void }) {
+export function ResultsScreen({ projection, loading = false, onRestart }: { projection?: RoomProjection; loading?: boolean; onRestart: () => void }) {
   const isHost = projection ? projection.public.host_id === projection.private.player_id : true;
   const imprisoned = useMemo(() => {
     return projection
@@ -177,7 +177,7 @@ export function ResultsScreen({ projection, onRestart }: { projection?: RoomProj
 
           <div className="mt-2 flex flex-col gap-2">
             {isHost ? (
-              <InkButton variant="orange" className="w-full" onClick={onRestart}>
+              <InkButton variant="orange" className="w-full" onClick={onRestart} loading={loading} loadingLabel="Starting match…">
                 Play again
               </InkButton>
             ) : (

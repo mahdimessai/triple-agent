@@ -10,7 +10,7 @@ import { PaperTitle } from "@/components/ui/paper-title";
  * talks about whatever just happened, and the server deals the next operation
  * when the deadline passes, the host can cut it short.
  */
-export function InterludeScreen({ deadline, seconds = 7, isHost = false, onSkip }: { deadline?: string; seconds?: number; isHost?: boolean; onSkip: () => void }) {
+export function InterludeScreen({ deadline, seconds = 7, isHost = false, loading = false, onSkip }: { deadline?: string; seconds?: number; isHost?: boolean; loading?: boolean; onSkip: () => void }) {
   const [remaining, setRemaining] = useState(seconds);
 
   useEffect(() => {
@@ -66,7 +66,7 @@ export function InterludeScreen({ deadline, seconds = 7, isHost = false, onSkip 
       </div>
       <p className="ta-paper ta-condensed w-full px-4 py-3 text-base leading-tight">Return the device to the table. You may tell the truth or lie about your new information.</p>
       <p className="ta-display text-4xl text-ta-paper">{remaining}</p>
-      {isHost ? <InkButton variant="orange" className="w-full" onClick={onSkip}>Skip to next operation</InkButton> : null}
+      {isHost ? <InkButton variant="orange" className="w-full" onClick={onSkip} loading={loading} loadingLabel="Skipping…">Skip to next operation</InkButton> : null}
     </div>
   );
 }

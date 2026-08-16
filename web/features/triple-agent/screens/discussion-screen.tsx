@@ -169,11 +169,13 @@ export function DiscussionScreen({
   timerEnabled,
   canAdvance = true,
   projection,
+  loading = false,
   onNext,
 }: {
   timerEnabled: boolean;
   canAdvance?: boolean;
   projection?: RoomProjection;
+  loading?: boolean;
   onNext: () => void;
 }) {
   const isTimerActive = projection ? projection.public.settings.discussion_timer_enabled : timerEnabled;
@@ -211,7 +213,7 @@ export function DiscussionScreen({
       ) : null}
 
       <div className="flex flex-col gap-2">
-        <InkButton variant="orange" className="w-full" onClick={onNext} disabled={hasVoted}>
+        <InkButton variant="orange" className="w-full" onClick={onNext} disabled={hasVoted} loading={loading} loadingLabel="Saving vote…">
           {buttonText}
         </InkButton>
         {hasVoted ? (

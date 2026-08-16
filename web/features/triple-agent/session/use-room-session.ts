@@ -14,6 +14,8 @@ import { clearLobbySession, loadLobbySession, saveLobbySession } from "./session
 
 const SESSION_EXPIRED_MESSAGE = "This room session has expired";
 const OFFLINE_SESSION_EXPIRED_MESSAGE = "The room session expired after five minutes offline";
+type RoomAction = "creating" | "joining";
+type PendingCommand = { requestId: string; kind: ClientCommand["kind"] };
 
 function screenForPhase(phase: Phase): ScreenId {
   switch (phase) {
@@ -47,10 +49,15 @@ export function useRoomSession({ screen, onScreenChange }: UseRoomSessionOptions
   const [session, setSession] = useState<LobbySession>();
   const [projection, setProjection] = useState<RoomProjection>();
   const [connectionState, setConnectionState] = useState<"connecting" | "open" | "closed">("closed");
+  const [reconnecting, setReconnecting] = useState(false);
   const [error, setError] = useState<string>();
   const [leaving, setLeaving] = useState(false);
+  const [roomAction, setRoomAction] = useState<RoomAction>();
+  const [pendingCommand, setPendingCommand] = useState<ClientCommand["kind"]>();
   const socketRef = useRef<RoomConnection | null>(null);
   const sessionRef = useRef<LobbySession | undefined>(undefined);
+  const roomActionRef = useRef<RoomAction | undefined>(undefined);
+  const pendingCommandRef = useRef<PendingCommand | undefined>(undefined);
   const connectionAttemptRef = useRef(0);
   const reconnectTimerRef = useRef<number | undefined>(undefined);
   const reconnectAttemptRef = useRef(0);
@@ -67,12 +74,24 @@ export function useRoomSession({ screen, onScreenChange }: UseRoomSessionOptions
     }
   }
 
+  function clearRoomAction() {
+    roomActionRef.current = undefined;
+    setRoomAction(undefined);
+  }
+
+  function clearPendingCommand() {
+    pendingCommandRef.current = undefined;
+    setPendingCommand(undefined);
+  }
+
   function closeSessionSocket(updateState = true) {
     connectionAttemptRef.current++;
     cancelReconnect();
     reconnectDeadlineRef.current = undefined;
     socketRef.current?.close();
     socketRef.current = null;
+    clearPendingCommand();
+    setReconnecting(false);
     if (updateState) setConnectionState("closed");
   }
 
@@ -83,6 +102,8 @@ export function useRoomSession({ screen, onScreenChange }: UseRoomSessionOptions
     socketRef.current?.close();
     socketRef.current = null;
     reconnectAttemptRef.current = 0;
+    clearRoomAction();
+    clearPendingCommand();
     sessionRef.current = undefined;
     clearLobbySession();
     setSession(undefined);
@@ -97,24 +118,29 @@ export function useRoomSession({ screen, onScreenChange }: UseRoomSessionOptions
     const attempt = ++connectionAttemptRef.current;
     const connection = connectRoom(nextSession, (nextProjection) => {
       if (attempt !== connectionAttemptRef.current) return;
+      if (roomActionRef.current) clearRoomAction();
       setProjection(nextProjection);
       setTimerEnabled(nextProjection.public.settings.discussion_timer_enabled);
       const nextScreen = screenRef.current === "settings" && nextProjection.public.phase === "LOBBY"
         ? "settings"
         : screenForPhase(nextProjection.public.phase);
       onScreenChange(nextScreen);
-    }, (ok, commandError) => {
+    }, (requestId, ok, commandError) => {
       if (attempt !== connectionAttemptRef.current) return;
+      if (pendingCommandRef.current?.requestId !== requestId) return;
+      clearPendingCommand();
       if (!ok) setError(commandError ?? "The server rejected that action");
       else setError(undefined);
     }, (state, details) => {
       if (attempt !== connectionAttemptRef.current) return;
       setConnectionState(state);
       if (state === "open") {
+        setReconnecting(false);
         reconnectAttemptRef.current = 0;
         reconnectDeadlineRef.current = undefined;
         cancelReconnect();
       } else if (state === "closed") {
+        clearPendingCommand();
         socketRef.current = null;
         if (details?.terminal) expireSession(details.message ?? SESSION_EXPIRED_MESSAGE);
         else scheduleReconnect(nextSession);
@@ -126,6 +152,7 @@ export function useRoomSession({ screen, onScreenChange }: UseRoomSessionOptions
   function scheduleReconnect(nextSession: LobbySession) {
     if (reconnectTimerRef.current !== undefined) return;
     if (sessionRef.current?.room_id !== nextSession.room_id) return;
+    setReconnecting(true);
     // Reconnect scheduling runs from a socket event, not during render.
     // eslint-disable-next-line react-hooks/purity
     const now = Date.now();
@@ -154,6 +181,8 @@ export function useRoomSession({ screen, onScreenChange }: UseRoomSessionOptions
     saveLobbySession(nextSession);
     reconnectAttemptRef.current = 0;
     reconnectDeadlineRef.current = undefined;
+    setReconnecting(false);
+    clearPendingCommand();
     closeSessionSocket();
     setSession(nextSession);
     setRoomCode(nextSession.join_code);
@@ -203,19 +232,24 @@ export function useRoomSession({ screen, onScreenChange }: UseRoomSessionOptions
   }, []);
 
   async function createRoom(playerName = "") {
+    if (roomActionRef.current) return;
     const name = playerName.trim();
     if (!name) {
       setError("Enter your name first");
       return;
     }
+    roomActionRef.current = "creating";
+    setRoomAction("creating");
     try {
       connectSession(await createLobby(name));
     } catch (cause) {
+      clearRoomAction();
       setError(cause instanceof Error ? cause.message : "Could not create the room");
     }
   }
 
   async function joinRoom(playerName = "") {
+    if (roomActionRef.current) return;
     const name = playerName.trim();
     if (!name) {
       setError("Enter your name first");
@@ -226,9 +260,12 @@ export function useRoomSession({ screen, onScreenChange }: UseRoomSessionOptions
       setError("Enter a room code first");
       return;
     }
+    roomActionRef.current = "joining";
+    setRoomAction("joining");
     try {
       connectSession(await joinLobby(code, name));
     } catch (cause) {
+      clearRoomAction();
       setError(cause instanceof Error ? cause.message : "Could not join the room");
     }
   }
@@ -269,8 +306,11 @@ export function useRoomSession({ screen, onScreenChange }: UseRoomSessionOptions
       setError("Connect to a room before sending an action");
       return;
     }
+    if (pendingCommandRef.current) return;
     try {
-      socketRef.current.send(command, projection.public.version);
+      const requestId = socketRef.current.send(command, projection.public.version);
+      pendingCommandRef.current = { requestId, kind: command.kind };
+      setPendingCommand(command.kind);
     } catch (cause) {
       setError(cause instanceof Error ? cause.message : "The room connection is not ready");
     }
@@ -288,7 +328,10 @@ export function useRoomSession({ screen, onScreenChange }: UseRoomSessionOptions
     session,
     projection,
     connectionState,
+    reconnecting,
     error,
+    roomAction,
+    pendingCommand,
     createRoom,
     joinRoom,
     leaveRoom,

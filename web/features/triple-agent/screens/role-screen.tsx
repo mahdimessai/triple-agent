@@ -58,6 +58,7 @@ export function RoleScreen({
   virusTeamSize = 0,
   canSubmit = true,
   waitingOn = 0,
+  loading = false,
   onNext,
 }: {
   faction?: string;
@@ -69,6 +70,7 @@ export function RoleScreen({
   virusTeamSize?: number;
   canSubmit?: boolean;
   waitingOn?: number;
+  loading?: boolean;
   onNext: () => void;
 }) {
   const isVirus = faction === "VIRUS";
@@ -120,7 +122,7 @@ export function RoleScreen({
 
       <div className="mt-3 flex items-center justify-between gap-3">
         <span className="ta-condensed text-xs tracking-[0.16em]">PRIVATE ROLE</span>
-        <InkButton onClick={onNext} disabled={!canSubmit}>
+        <InkButton onClick={onNext} disabled={!canSubmit} loading={loading} loadingLabel="Saving…">
           {canSubmit ? "I understand" : waitingLabel}
         </InkButton>
       </div>

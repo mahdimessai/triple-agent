@@ -4,18 +4,13 @@ import { InkButton } from "@/components/ui/ink-button";
 import { PaperTitle } from "@/components/ui/paper-title";
 import type { RoomProjection } from "@/components/triple-agent/server-client";
 
-export function AccusationScreen({ projection, onNext }: { projection?: RoomProjection; onNext: (targetId?: string) => void }) {
+export function AccusationScreen({ projection, loading = false, onNext }: { projection?: RoomProjection; loading?: boolean; onNext: (targetId?: string) => void }) {
   const [selected, setSelected] = useState("");
-  // The vote is the one irreversible thing a player does in a round, so it is
-  // worth remembering locally: the projection deliberately never says who you
-  // accused, only that you accused someone.
-  const [submittedTo, setSubmittedTo] = useState<string>();
   const liveTargets = projection?.public.players.filter((player) => player.id !== projection.private.player_id) ?? [];
   const targets = liveTargets.length ? liveTargets : ["PLAYER A", "PLAYER B", "PLAYER C", "PLAYER D"].map((name) => ({ id: name, name }));
   const alreadyVoted = projection ? !projection.private.can_submit : false;
-  const locked = alreadyVoted || submittedTo !== undefined;
+  const locked = alreadyVoted || loading;
   const waitingOn = projection?.public.players.filter((player) => !player.vote_submitted).length ?? 0;
-  const submittedName = targets.find((target) => target.id === submittedTo)?.name;
 
   return (
     <div className="ta-rise ta-screen">
@@ -32,16 +27,16 @@ export function AccusationScreen({ projection, onNext }: { projection?: RoomProj
           </button>
         ))}
       </div>
-      {locked ? (
+      {alreadyVoted ? (
         <div className="ta-paper p-4 text-center">
           <p className="ta-condensed text-xs tracking-[0.16em] text-black/60">YOUR ACCUSATION IS IN</p>
-          <p className="ta-display mt-1 text-2xl">{submittedName ?? "SUBMITTED"}</p>
+          <p className="ta-display mt-1 text-2xl">SUBMITTED</p>
           <p className="ta-condensed mt-2 text-sm text-black/65">{waitingOn > 0 ? `Waiting for ${waitingOn} more ${waitingOn === 1 ? "player" : "players"} to vote.` : "Waiting for the room to finish voting."}</p>
         </div>
       ) : (
         <div className="flex items-center justify-between gap-3">
           <span className="ta-condensed text-xs tracking-[0.16em]">TARGET HIDDEN FROM ROOM</span>
-          <InkButton variant="orange" disabled={!selected} onClick={() => { setSubmittedTo(selected); onNext(selected); }}>Submit vote</InkButton>
+          <InkButton variant="orange" disabled={!selected} loading={loading} loadingLabel="Submitting vote…" onClick={() => onNext(selected)}>Submit vote</InkButton>
         </div>
       )}
     </div>

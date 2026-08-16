@@ -35,6 +35,8 @@ export function LobbyScreen({
   isHost,
   canReady,
   isReady,
+  readyLoading = false,
+  startLoading = false,
   onReady,
   onStart,
   onLeave,
@@ -52,6 +54,8 @@ export function LobbyScreen({
   isHost?: boolean;
   canReady?: boolean;
   isReady?: boolean;
+  readyLoading?: boolean;
+  startLoading?: boolean;
   onReady?: () => void;
   onStart: () => void;
   onLeave?: () => void;
@@ -106,14 +110,14 @@ export function LobbyScreen({
       </div>
       {isLive ? <div className="ta-paper flex items-center justify-between gap-3 px-4 py-3"><span className="ta-condensed text-xs tracking-[0.16em]">READY STATUS</span><span className="ta-condensed text-sm">{readyCount} / {roster.length} READY · {minPlayers} NEEDED</span></div> : null}
       {error ? <p className="ta-condensed text-sm text-white">{error}</p> : null}
-      {isLive && canReady ? <InkButton className="w-full" onClick={onReady}>{isReady ? "Not ready" : "I'm ready"}</InkButton> : null}
+      {isLive && canReady ? <InkButton className="w-full" onClick={onReady} disabled={startLoading} loading={readyLoading} loadingLabel="Saving…">{isReady ? "Not ready" : "I'm ready"}</InkButton> : null}
       {isLive && !isHost ? <p className="ta-condensed text-center text-sm text-white/80">{blockedReason ?? "Waiting for the host to start the match"}</p> : (
         <>
-          <InkButton variant="orange" className="w-full" onClick={onStart} disabled={!canStart}>Start match</InkButton>
+          <InkButton variant="orange" className="w-full" onClick={onStart} disabled={!canStart || readyLoading} loading={startLoading} loadingLabel="Starting match…">Start match</InkButton>
           {isLive && blockedReason ? <p className="ta-condensed text-center text-sm text-white/80">{blockedReason}</p> : null}
         </>
       )}
-      {isLive ? <button className="ta-secondary-button w-full" onClick={() => { if (window.confirm("Leave this lobby? Your seat will be given up.")) onLeave?.(); }} disabled={leaving} type="button">{leaving ? "Leaving…" : "Leave lobby"}</button> : null}
+      {isLive ? <button className="ta-secondary-button w-full" onClick={() => { if (window.confirm("Leave this lobby? Your seat will be given up.")) onLeave?.(); }} disabled={leaving} aria-busy={leaving ? true : undefined} type="button">{leaving ? <span className="ta-button-loading"><span className="ta-button-spinner" aria-hidden="true" />Leaving…</span> : "Leave lobby"}</button> : null}
     </div>
   );
 }

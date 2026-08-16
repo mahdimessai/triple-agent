@@ -151,7 +151,7 @@ function LiveOperationInput({ projection, selectedTargets, setSelectedTargets, s
   );
 }
 
-export function OperationScreen({ operationId, projection, onNext }: { operationId: OperationId; projection?: RoomProjection; onNext: (targetIds?: string[], choice?: string) => void }) {
+export function OperationScreen({ operationId, projection, loading = false, onNext }: { operationId: OperationId; projection?: RoomProjection; loading?: boolean; onNext: (targetIds?: string[], choice?: string) => void }) {
   const [selectedTargets, setSelectedTargets] = useState<string[]>([]);
   const [selectedChoice, setSelectedChoice] = useState("");
   // The public projection already carries the Hidden Agenda cover for hidden
@@ -213,6 +213,8 @@ export function OperationScreen({ operationId, projection, onNext }: { operation
         className="ta-operation-submit w-full"
         onClick={() => onNext(selectedTargets, selectedChoice)}
         disabled={Boolean(projection && (!projection.private.can_submit || (projection.public.phase === "OPERATION_INPUT" && !canSubmitForm)))}
+        loading={loading}
+        loadingLabel={projection?.public.phase === "OPERATION_INPUT" ? "Saving operation…" : "Saving…"}
       >
         {projection?.public.phase === "OPERATION_INPUT" ? (projection.private.can_submit ? "Confirm operation" : waitingLabel) : projection?.private.can_submit ? "Done" : waitingLabel}
       </InkButton>

@@ -21,14 +21,14 @@ function websocketUrl(session: LobbySession) {
 }
 
 export type RoomConnection = {
-  send(command: ClientCommand, expectedVersion: number): void;
+  send(command: ClientCommand, expectedVersion: number): string;
   close(): void;
 };
 
 export function connectRoom(
   session: LobbySession,
   onProjection: (projection: RoomProjection) => void,
-  onAck: (ok: boolean, error?: string) => void,
+  onAck: (requestId: string, ok: boolean, error?: string) => void,
   onState: (state: ConnectionState, details?: ConnectionStateDetails) => void,
 ): RoomConnection {
   const socket = new WebSocket(websocketUrl(session));
@@ -69,7 +69,7 @@ export function connectRoom(
       latestVersion = message.public.version;
       onProjection(message);
     } else if (message.type === "command.ack") {
-      onAck(message.ok, message.error);
+      onAck(message.request_id, message.ok, message.error);
     } else if (message.type === "session.authenticated") {
       onState("open");
     } else if (message.type === "session.error") {
@@ -84,12 +84,14 @@ export function connectRoom(
       if (socket.readyState !== WebSocket.OPEN) {
         throw new Error("Room connection is not open");
       }
+      const requestId = crypto.randomUUID();
       const wireCommand: WireCommand = {
         ...command,
-        request_id: crypto.randomUUID(),
+        request_id: requestId,
         expected_version: expectedVersion,
       };
       socket.send(JSON.stringify(wireCommand));
+      return requestId;
     },
     close() {
       socket.close();
