@@ -92,7 +92,6 @@ export const operationBriefs: Record<string, string> = {
   Confirm: "Confirm your current agency privately.",
   NegativeVote: "Protect one player from a vote.",
   Ambassador: "Recovered variant with a server-defined effect.",
-  Brig: "Recovered variant with a server-defined status effect.",
   EarlyVote: "Recovered variant that changes accusation timing.",
   Hunter: "Recovered variant that prepares a target search.",
   LastEvent: "Recovered variant that marks the final event.",
