@@ -70,8 +70,7 @@ const OperationCard = memo(function OperationCard({ operation, label, enabled, d
         <span className="ta-condensed text-[0.58rem] tracking-[0.12em] text-black/55">{label}</span>
       </span>
       <span className="ta-operation-card-brief">{operationBrief(operation)}</span>
-      <span className="ta-operation-card-footer">
-        <span className="ta-condensed min-w-0 truncate text-[0.62rem] tracking-[0.08em] text-black/55">{operation.input}</span>
+      <span className="ta-operation-card-footer justify-center">
         <span className="ta-condensed shrink-0 text-[0.62rem] tracking-[0.1em]">{enabled ? "ENABLED" : "DISABLED"}</span>
       </span>
     </button>
@@ -288,16 +287,6 @@ export function SettingsScreen({ timerEnabled, setTimerEnabled, projection, live
         {/* Hidden Agenda is centered in the box with all envelopes emanating from it. */}
         <div className="mt-6 border-2 border-black/25 bg-black/[0.02] p-4">
           <div className="mb-4 flex flex-col gap-2 sm:flex-row sm:items-end sm:justify-between">
-            <div>
-              <p className="ta-condensed text-xs tracking-[0.16em]">HIDDEN AGENDA</p>
-              <p className="ta-condensed mt-1 max-w-prose text-sm leading-tight text-black/75">
-                One operation dealt under one cover. The room only hears that new orders arrived; the server picks which of the envelopes below the recipient
-                actually opens. Switch the master cover off to disable all hidden agendas, or toggle individual envelopes.
-              </p>
-            </div>
-            <span className="ta-condensed shrink-0 text-xs tracking-[0.12em] text-black/70">
-              {sortedHiddenAgendaMembers.filter((operation) => enabledIDs.has(operation.id)).length} / {sortedHiddenAgendaMembers.length} ENVELOPES ACTIVE
-            </span>
           </div>
 
           <div className="flex flex-col items-center">
@@ -328,8 +317,6 @@ export function SettingsScreen({ timerEnabled, setTimerEnabled, projection, live
                 </div>
               </div>
               <span className="ta-condensed mt-1 max-w-full text-center text-[0.6rem] font-bold tracking-[0.12em] text-black/60 uppercase sm:text-[0.65rem] sm:tracking-[0.2em]">
-                <span className="whitespace-nowrap">▼ Secret envelopes</span>{" "}
-                <span className="whitespace-nowrap">emanating from cover ▼</span>
               </span>
             </div>
 
