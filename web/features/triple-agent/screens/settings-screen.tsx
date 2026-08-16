@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { memo, useCallback, useState } from "react";
 import { ArtStamp } from "@/components/ui/art-stamp";
 import { PaperTitle } from "@/components/ui/paper-title";
 import { operationCatalog, liveOperationIDs, hiddenAgendaMemberIDs, packOperationIDs, getOperation, type OperationDefinition } from "@/components/triple-agent/operation-catalog";
@@ -49,13 +49,15 @@ function Stepper({ label, hint, value, onDecrease, onIncrease, canDecrease, canI
  * envelopes and the pack operations all render through this, so a card reads
  * the same wherever it sits in the deck.
  */
-function OperationCard({ operation, label, enabled, disabled, onToggle }: { operation: OperationDefinition; label: string; enabled: boolean; disabled: boolean; onToggle: () => void }) {
+type ToggleHandler = (id: string, enabled: boolean) => void;
+
+const OperationCard = memo(function OperationCard({ operation, label, enabled, disabled, onToggle }: { operation: OperationDefinition; label: string; enabled: boolean; disabled: boolean; onToggle: ToggleHandler }) {
   return (
     <button
       className="ta-operation-card"
       data-enabled={enabled}
       disabled={disabled}
-      onClick={onToggle}
+      onClick={() => onToggle(operation.id, !enabled)}
       type="button"
       aria-pressed={enabled}
       aria-label={`${enabled ? "Disable" : "Enable"} ${operation.name}`}
@@ -74,7 +76,34 @@ function OperationCard({ operation, label, enabled, disabled, onToggle }: { oper
       </span>
     </button>
   );
-}
+});
+
+const RoleCard = memo(function RoleCard({ role, enabled, disabled, onToggle }: { role: (typeof roleCatalog)[number]; enabled: boolean; disabled: boolean; onToggle: ToggleHandler }) {
+  return (
+    <button
+      className="ta-operation-card"
+      data-enabled={enabled}
+      disabled={disabled}
+      type="button"
+      aria-pressed={enabled}
+      aria-label={`${enabled ? "Remove" : "Add"} ${role.name} ${enabled ? "from" : "to"} the role pool`}
+      onClick={() => onToggle(role.id, !enabled)}
+    >
+      <span className="ta-operation-card-art" aria-hidden="true">
+        <ArtStamp artName={role.artName} alt="" className="h-16 w-20 object-contain" />
+      </span>
+      <span className="ta-operation-card-heading">
+        <span className="ta-display text-base leading-none">{role.name}</span>
+        <span className={`ta-condensed text-[0.58rem] tracking-[0.12em] ${role.faction === "VIRUS" ? "text-ta-red" : "text-[#1d5b79]"}`}>{role.faction}</span>
+      </span>
+      <span className="ta-operation-card-brief">{role.effect}</span>
+      <span className="ta-operation-card-footer">
+        <span className="ta-condensed min-w-0 truncate text-[0.62rem] tracking-[0.08em] text-black/55">Dealt to a {role.faction === "VIRUS" ? "VIRUS" : "SERVICE"} agent</span>
+        <span className="ta-condensed shrink-0 text-[0.62rem] tracking-[0.1em]">{enabled ? "ENABLED" : "DISABLED"}</span>
+      </span>
+    </button>
+  );
+});
 
 export function SettingsScreen({ timerEnabled, setTimerEnabled, projection, liveSession = false, isHost = false, onCommand, error }: { timerEnabled: boolean; setTimerEnabled: (value: boolean) => void; projection?: RoomProjection; liveSession?: boolean; isHost?: boolean; onCommand?: CommandSender; error?: string }) {
   const enabledIDs = new Set(projection?.public.settings.enabled_operations ?? operationCatalog.filter((operation) => operation.status === "enabled").map((operation) => operation.id));
@@ -111,16 +140,10 @@ export function SettingsScreen({ timerEnabled, setTimerEnabled, projection, live
   const deckSize = deckOperations.length + 1;
   const activeCount = deckOperations.filter((operation) => enabledIDs.has(operation.id)).length + (hiddenAgendaEnabled ? 1 : 0);
 
-  function toggleOperation(operationID: string) {
+  const toggleOperation = useCallback<ToggleHandler>((operationID, enabled) => {
     if (!canEdit) return;
-    onCommand?.("lobby.operation_enabled", { operationKind: operationID, operationEnabled: !enabledIDs.has(operationID) });
-  }
-
-  // The server takes the cover as one command and flips every envelope with it.
-  function toggleHiddenAgenda() {
-    if (!canEdit) return;
-    onCommand?.("lobby.operation_enabled", { operationKind: "HiddenAgenda", operationEnabled: !hiddenAgendaEnabled });
-  }
+    onCommand?.("lobby.operation_enabled", { operationKind: operationID, operationEnabled: enabled });
+  }, [canEdit, onCommand]);
 
   // The room needs at least one operation left to deal, so the last enabled
   // card locks rather than emptying the deck.
@@ -168,10 +191,9 @@ export function SettingsScreen({ timerEnabled, setTimerEnabled, projection, live
     }
   }
 
-  function toggleRole(roleID: string) {
-    const turningOn = !enabledRoleIDs.has(roleID);
+  const toggleRole = useCallback<ToggleHandler>((roleID, enabled) => {
     if (canEdit) {
-      onCommand?.("lobby.role_enabled", { roleId: roleID, roleEnabled: turningOn });
+      onCommand?.("lobby.role_enabled", { roleId: roleID, roleEnabled: enabled });
     } else if (!liveSession) {
       setLocalRoles((current) => {
         const next = new Set(current);
@@ -180,7 +202,7 @@ export function SettingsScreen({ timerEnabled, setTimerEnabled, projection, live
         return next;
       });
     }
-  }
+  }, [canEdit, liveSession, onCommand]);
 
   return (
     <div className="ta-rise ta-screen ta-screen--settings space-y-4">
@@ -233,31 +255,7 @@ export function SettingsScreen({ timerEnabled, setTimerEnabled, projection, live
         <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-3">
           {roleCatalog.map((role) => {
             const enabled = enabledRoleIDs.has(role.id);
-            return (
-              <button
-                className="ta-operation-card"
-                data-enabled={enabled}
-                disabled={controlsLocked}
-                key={role.id}
-                onClick={() => toggleRole(role.id)}
-                type="button"
-                aria-pressed={enabled}
-                aria-label={`${enabled ? "Remove" : "Add"} ${role.name} ${enabled ? "from" : "to"} the role pool`}
-              >
-                <span className="ta-operation-card-art" aria-hidden="true">
-                  <ArtStamp artName={role.artName} alt="" className="h-16 w-20 object-contain" />
-                </span>
-                <span className="ta-operation-card-heading">
-                  <span className="ta-display text-base leading-none">{role.name}</span>
-                  <span className={`ta-condensed text-[0.58rem] tracking-[0.12em] ${role.faction === "VIRUS" ? "text-ta-red" : "text-[#1d5b79]"}`}>{role.faction}</span>
-                </span>
-                <span className="ta-operation-card-brief">{role.effect}</span>
-                <span className="ta-operation-card-footer">
-                  <span className="ta-condensed min-w-0 truncate text-[0.62rem] tracking-[0.08em] text-black/55">Dealt to a {role.faction === "VIRUS" ? "VIRUS" : "SERVICE"} agent</span>
-                  <span className="ta-condensed shrink-0 text-[0.62rem] tracking-[0.1em]">{enabled ? "ENABLED" : "DISABLED"}</span>
-                </span>
-              </button>
-            );
+            return <RoleCard key={role.id} role={role} enabled={enabled} disabled={controlsLocked} onToggle={toggleRole} />;
           })}
         </div>
       </div>
@@ -282,7 +280,7 @@ export function SettingsScreen({ timerEnabled, setTimerEnabled, projection, live
               label={packOperationIDs.has(operation.id) ? "PACK 01" : operation.category.toUpperCase()}
               enabled={enabledIDs.has(operation.id)}
               disabled={lockedOff(operation.id)}
-              onToggle={() => toggleOperation(operation.id)}
+              onToggle={toggleOperation}
             />
           ))}
         </div>
@@ -310,7 +308,7 @@ export function SettingsScreen({ timerEnabled, setTimerEnabled, projection, live
                 label="THE MASTER COVER"
                 enabled={hiddenAgendaEnabled}
                 disabled={!canEdit}
-                onToggle={toggleHiddenAgenda}
+                onToggle={toggleOperation}
               />
             </div>
 
@@ -344,7 +342,7 @@ export function SettingsScreen({ timerEnabled, setTimerEnabled, projection, live
                   label="ENVELOPE"
                   enabled={enabledIDs.has(operation.id)}
                   disabled={lockedOff(operation.id)}
-                  onToggle={() => toggleOperation(operation.id)}
+                  onToggle={toggleOperation}
                 />
               ))}
             </div>

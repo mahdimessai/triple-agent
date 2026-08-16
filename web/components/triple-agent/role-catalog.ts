@@ -24,7 +24,7 @@ export const roleCatalog = [
     faction: "VIRUS",
     artName: "roleRogueAgent",
     description: "You work for VIRUS, but the other VIRUS agents were never told about you.",
-    effect: "Left off the VIRUS roster, so your own side reads one name short.",
+    effect: "You are a Rogue Agent. The other VIRUS Agents do not know that you are a double agent",
   },
   {
     id: "FAKE_RED",
@@ -32,7 +32,7 @@ export const roleCatalog = [
     faction: "SERVICE",
     artName: "roleTripleAgent",
     description: "The VIRUS agents think you are one of them. You are not.",
-    effect: "Listed on the VIRUS roster and shown it, so their side reads one name long.",
+    effect: "You are a triple agent. The VIRUS double agents think you are on their side, but you are actually working for the Service.",
   },
   {
     id: "LYING_RED",
@@ -40,7 +40,7 @@ export const roleCatalog = [
     faction: "VIRUS",
     artName: "roleDeepCover",
     description: "You are operating under deep cover for VIRUS.",
-    effect: "Every check on you reports SERVICE.",
+    effect: "You are operating under deep cover. Anytime someone tries to check your status they will see you as a Service agent.",
   },
   {
     id: "LYING_BLUE",
@@ -48,7 +48,7 @@ export const roleCatalog = [
     faction: "SERVICE",
     artName: "roleSuspicious",
     description: "Your past includes some ties to suspicious figures.",
-    effect: "Every check on you reports VIRUS.",
+    effect: "Your past includes some ties to suspicious figures. Anytime someone tries to check your status, they will see you as a VIRUS agent",
   },
   {
     id: "LOYAL_BLUE",
@@ -56,7 +56,7 @@ export const roleCatalog = [
     faction: "SERVICE",
     artName: "roleServiceLoyalist",
     description: "You are a die-hard loyalist and will not be turned.",
-    effect: "Any operation that would move you off SERVICE is cancelled.",
+    effect: "You are a die hard loyalist. Any operation that attempts to change your team from a Service agent will be cancelled.",
   },
   {
     id: "LOYAL_RED",
@@ -64,7 +64,7 @@ export const roleCatalog = [
     faction: "VIRUS",
     artName: "roleVirusLoyalist",
     description: "You are a die-hard loyalist and will not be turned.",
-    effect: "Any operation that would move you off VIRUS is cancelled.",
+    effect: "You are a die hard loyalist. Any operation that attempts to change your team from a VIRUS agent will be cancelled.",
   },
 ] as const satisfies readonly RoleDefinition[];
 

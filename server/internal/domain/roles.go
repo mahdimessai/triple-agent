@@ -40,7 +40,7 @@ var roleDefinitions = []RoleDefinition{
 		Special:     true,
 		Score:       0.5,
 		Description: "You work for VIRUS, but the other VIRUS agents were never told about you.",
-		Effect:      "Left off the VIRUS roster, so your own side reads one name short.",
+		Effect:      "You are a Rogue Agent. The other VIRUS Agents do not know that you are a double agent",
 	},
 	{
 		ID:          string(RoleFakeRed),
@@ -49,7 +49,7 @@ var roleDefinitions = []RoleDefinition{
 		Special:     true,
 		Score:       0.5,
 		Description: "The VIRUS agents think you are one of them. You are not.",
-		Effect:      "Listed on the VIRUS roster and shown it, so their side reads one name long.",
+		Effect:      "You are a triple agent. The VIRUS double agents think you are on their side, but you are actually working for the Service.",
 	},
 	{
 		ID:          string(RoleLyingRed),
@@ -58,7 +58,7 @@ var roleDefinitions = []RoleDefinition{
 		Special:     true,
 		Score:       -0.5,
 		Description: "You are operating under deep cover for VIRUS.",
-		Effect:      "Every check on you reports SERVICE.",
+		Effect:      "You are operating under deep cover. Anytime someone tries to check your status they will see you as a Service agent.",
 	},
 	{
 		ID:          string(RoleLyingBlue),
@@ -67,7 +67,7 @@ var roleDefinitions = []RoleDefinition{
 		Special:     true,
 		Score:       -0.5,
 		Description: "Your past includes some ties to suspicious figures.",
-		Effect:      "Every check on you reports VIRUS.",
+		Effect:      "Your past includes some ties to suspicious figures. Any time someone tries to check your status, they will see you as a VIRUS agent",
 	},
 	{
 		ID:          string(RoleLoyalBlue),
@@ -76,7 +76,7 @@ var roleDefinitions = []RoleDefinition{
 		Special:     true,
 		Score:       0.5,
 		Description: "You are a die-hard loyalist and will not be turned.",
-		Effect:      "Any operation that would move you off SERVICE is cancelled.",
+		Effect:      "You are a die hard loyalist. Any operation that attempts to change your team from a Service agent will be cancelled.",
 	},
 	{
 		ID:          string(RoleLoyalRed),
@@ -85,7 +85,7 @@ var roleDefinitions = []RoleDefinition{
 		Special:     true,
 		Score:       -0.5,
 		Description: "You are a die-hard loyalist and will not be turned.",
-		Effect:      "Any operation that would move you off VIRUS is cancelled.",
+		Effect:      "You are a die hard loyalist. Any operation that attempts to change your team from a VIRUS agent will be cancelled.",
 	},
 }
 

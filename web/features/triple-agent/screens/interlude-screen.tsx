@@ -16,10 +16,40 @@ export function InterludeScreen({ deadline, seconds = 7, isHost = false, onSkip 
   useEffect(() => {
     if (!deadline) return;
     const target = new Date(deadline).getTime();
-    const tick = () => setRemaining(Math.max(0, Math.ceil((target - Date.now()) / 1000)));
+    if (!Number.isFinite(target)) return;
+
+    let timeout: number | undefined;
+    const stop = () => {
+      if (timeout !== undefined) {
+        window.clearTimeout(timeout);
+        timeout = undefined;
+      }
+    };
+    const tick = () => {
+      if (document.visibilityState !== "visible") {
+        stop();
+        return;
+      }
+      const remainingMs = target - Date.now();
+      const next = Math.max(0, Math.ceil(remainingMs / 1000));
+      setRemaining(next);
+      stop();
+      if (next > 0) {
+        const delay = Math.max(50, remainingMs % 1000 || 1000);
+        timeout = window.setTimeout(tick, delay);
+      }
+    };
+    const handleVisibilityChange = () => {
+      stop();
+      if (document.visibilityState === "visible") tick();
+    };
+
     tick();
-    const interval = window.setInterval(tick, 250);
-    return () => window.clearInterval(interval);
+    document.addEventListener("visibilitychange", handleVisibilityChange);
+    return () => {
+      stop();
+      document.removeEventListener("visibilitychange", handleVisibilityChange);
+    };
   }, [deadline]);
 
   return (

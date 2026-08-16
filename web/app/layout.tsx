@@ -1,5 +1,4 @@
 import type { Metadata, Viewport } from "next";
-import { AssetPreloader } from "@/components/triple-agent/asset-preloader";
 import { RetireLegacyServiceWorker } from "@/components/triple-agent/register-service-worker";
 import "./globals.css";
 
@@ -25,7 +24,6 @@ export default function RootLayout({ children }: Readonly<{ children: React.Reac
   return (
     <html lang="en">
       <body>
-        <AssetPreloader />
         <RetireLegacyServiceWorker />
         {children}
       </body>

@@ -35,11 +35,18 @@ function AnimatedStopwatch({
     };
 
     const update = () => {
-      if (document.visibilityState !== "visible") return;
-      const next = Math.max(0, Math.ceil((deadlineMs - Date.now()) / 1000));
+      if (document.visibilityState !== "visible") {
+        stop();
+        return;
+      }
+      const remainingMs = deadlineMs - Date.now();
+      const next = Math.max(0, Math.ceil(remainingMs / 1000));
       setSecondsRemaining(next);
       stop();
-      if (next > 0) timeoutRef.current = window.setTimeout(update, 250);
+      if (next > 0) {
+        const delay = Math.max(50, remainingMs % 1000 || 1000);
+        timeoutRef.current = window.setTimeout(update, delay);
+      }
     };
 
     const handleVisibilityChange = () => {

@@ -70,7 +70,32 @@ export function operationResultText(result: OperationResult, projection: RoomPro
 }
 
 export const operationBriefs: Record<string, string> = {
-  HiddenAgenda: "New orders arrive: a side switch, a new win condition, or intel on one agent.", Swap: "Trade agencies with one other player.", Injection: "Attempt to recruit a target into your agency.", Share: "Show one agency fact to a chosen recipient.", Detector: "Check two players for a possible VIRUS link.", Strain: "Gain a private win condition tied to imprisonment.", Grudge: "You are dealt a target you need to see imprisoned.", Infatuation: "Your win is bound to another player's victory.", Flip: "Your agency may change under a hidden instruction.", HiddenOneRandom: "Receive a private agency tip.", OneRandom: "Receive an anonymous private agency tip.", OneOfTwo: "Learn which of two players is VIRUS.", TwoFriends: "Learn which two players began together.", Undercover: "Inspect a target and possibly join them.", InfoForTwo: "Share a VIRUS check with another player.", ChooseVoteShield: "Give a target a vote penalty or shield.", Defect: "Choose whether to defect from your agency.", Power: "Give one player a double accusation vote.", Vote: "Give one player an extra accusation vote against them.", Confirm: "Confirm your current agency privately.", NegativeVote: "Protect one player from a vote.", Ambassador: "Recovered variant with a server-defined effect.", Brig: "Recovered variant with a server-defined status effect.", EarlyVote: "Recovered variant that changes accusation timing.", Hunter: "Recovered variant that prepares a target search.", LastEvent: "Recovered variant that marks the final event.",
+  HiddenAgenda: "New orders arrive: a side switch, a new win condition, or intel on one agent.",
+  Swap: "The active player must choose another agent and secretely swap agencies with them. They each now work for the agency the other used to work for.",
+  Injection: "Attempt to recruit a target into your agency.",
+  Share: "The active player must show one (and only one) other agent which agency they work for",
+  Detector: "The active player must choose two agents. The intel will reveal if either of them is a virus agent",
+  Strain: "Gain a private win condition tied to imprisonment.",
+  Grudge: "You are dealt a target you need to see imprisoned.",
+  Infatuation: "Your win is bound to another player's victory.",
+  Flip: "Your agency may change under a hidden instruction.",
+  HiddenOneRandom: "Receive a private agency tip.",
+  OneRandom: "The active player's source knows the agency of one other agent and reveals it to them.",
+  OneOfTwo: "The active player intercepts a transmission with two names: one is a virus and the other is not.",
+  TwoFriends: "The active player found evidence that shows them the names of two agents that were working for the same agency at the start.",
+  Undercover: "Inspect a target and possibly join them.",
+  InfoForTwo: "Share a VIRUS check with another player.",
+  ChooseVoteShield: "Give a target a vote penalty or shield.",
+  Defect: "Choose whether to defect from your agency.",
+  Power: "Give one player a double accusation vote.",
+  Vote: "Give one player an extra accusation vote against them.",
+  Confirm: "Confirm your current agency privately.",
+  NegativeVote: "Protect one player from a vote.",
+  Ambassador: "Recovered variant with a server-defined effect.",
+  Brig: "Recovered variant with a server-defined status effect.",
+  EarlyVote: "Recovered variant that changes accusation timing.",
+  Hunter: "Recovered variant that prepares a target search.",
+  LastEvent: "Recovered variant that marks the final event.",
 };
 
 /**

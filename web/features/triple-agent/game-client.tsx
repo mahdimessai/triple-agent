@@ -1,20 +1,27 @@
 "use client";
 
+import dynamic from "next/dynamic";
 import { useEffect, useRef, useState } from "react";
+import type { OperationId } from "@/components/triple-agent/operation-catalog";
 import { GameShell } from "@/features/triple-agent/components/game-shell";
-import { AccusationScreen } from "@/features/triple-agent/screens/accusation-screen";
-import { DiscussionScreen } from "@/features/triple-agent/screens/discussion-screen";
-import { InterludeScreen } from "@/features/triple-agent/screens/interlude-screen";
-import { LobbyScreen } from "@/features/triple-agent/screens/lobby-screen";
-import { MissionScreen } from "@/features/triple-agent/screens/mission-screen";
-import { OperationScreen } from "@/features/triple-agent/screens/operation-screen";
-import { ResultsScreen } from "@/features/triple-agent/screens/results-screen";
-import { RoleScreen } from "@/features/triple-agent/screens/role-screen";
-import { SettingsScreen } from "@/features/triple-agent/screens/settings-screen";
 import { TitleScreen } from "@/features/triple-agent/screens/title-screen";
 import { operationIdForServerKind, type CommandPayload, type CommandSender, type ScreenId } from "@/features/triple-agent/model/screen";
 import type { RoomProjection } from "@/features/triple-agent/protocol/types";
 import { useRoomSession } from "@/features/triple-agent/session/use-room-session";
+
+function ScreenLoading() {
+  return <div className="ta-rise ta-screen items-center justify-center text-center"><p className="ta-condensed">Loading…</p></div>;
+}
+
+const AccusationScreen = dynamic(() => import("@/features/triple-agent/screens/accusation-screen").then((module) => module.AccusationScreen), { loading: ScreenLoading });
+const DiscussionScreen = dynamic(() => import("@/features/triple-agent/screens/discussion-screen").then((module) => module.DiscussionScreen), { loading: ScreenLoading });
+const InterludeScreen = dynamic(() => import("@/features/triple-agent/screens/interlude-screen").then((module) => module.InterludeScreen), { loading: ScreenLoading });
+const LobbyScreen = dynamic(() => import("@/features/triple-agent/screens/lobby-screen").then((module) => module.LobbyScreen), { loading: ScreenLoading });
+const MissionScreen = dynamic(() => import("@/features/triple-agent/screens/mission-screen").then((module) => module.MissionScreen), { loading: ScreenLoading });
+const OperationScreen = dynamic(() => import("@/features/triple-agent/screens/operation-screen").then((module) => module.OperationScreen), { loading: ScreenLoading });
+const ResultsScreen = dynamic(() => import("@/features/triple-agent/screens/results-screen").then((module) => module.ResultsScreen), { loading: ScreenLoading });
+const RoleScreen = dynamic(() => import("@/features/triple-agent/screens/role-screen").then((module) => module.RoleScreen), { loading: ScreenLoading });
+const SettingsScreen = dynamic(() => import("@/features/triple-agent/screens/settings-screen").then((module) => module.SettingsScreen), { loading: ScreenLoading });
 
 function ScreenContent({ screen, playerName, setPlayerName, roomCode, setRoomCode, roomCodeCopied, copyRoomCode, timerEnabled, setTimerEnabled, navigate, operationId, setOperationId, projection, liveSession, onCommand, onCreateRoom, onJoinRoom, onLeave, leaving, error }: {
   screen: ScreenId;
@@ -27,8 +34,8 @@ function ScreenContent({ screen, playerName, setPlayerName, roomCode, setRoomCod
   timerEnabled: boolean;
   setTimerEnabled: (value: boolean) => void;
   navigate: (screen: ScreenId) => void;
-  operationId: Parameters<typeof OperationScreen>[0]["operationId"];
-  setOperationId: (id: Parameters<typeof OperationScreen>[0]["operationId"]) => void;
+  operationId: OperationId;
+  setOperationId: (id: OperationId) => void;
   projection?: RoomProjection;
   liveSession?: boolean;
   onCommand?: CommandSender;
@@ -56,7 +63,7 @@ function ScreenContent({ screen, playerName, setPlayerName, roomCode, setRoomCod
 export function GameClient() {
   const [screen, setScreen] = useState<ScreenId>("title");
   const [playerName, setPlayerName] = useState("");
-  const [operationId, setOperationId] = useState<Parameters<typeof OperationScreen>[0]["operationId"]>("OneRandom");
+  const [operationId, setOperationId] = useState<OperationId>("OneRandom");
   const [roomCodeCopied, setRoomCodeCopied] = useState(false);
   const roomCodeCopiedTimerRef = useRef<number | undefined>(undefined);
   const {
