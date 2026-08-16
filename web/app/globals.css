@@ -881,8 +881,9 @@ a {
 .ta-operation-card {
   position: relative;
   display: grid;
-  min-height: 13rem;
-  grid-template-rows: auto auto 1fr auto;
+  height: clamp(14rem, 20vw, 18rem);
+  min-height: 14rem;
+  grid-template-rows: auto auto minmax(0, 1fr) auto;
   /* The implicit auto column would size to the footer's min-content width and
      spill past the border; minmax(0, 1fr) caps it so the footer can truncate. */
   grid-template-columns: minmax(0, 1fr);
@@ -990,20 +991,20 @@ a {
 }
 
 .ta-operation-card-brief {
-  display: -webkit-box;
+  min-height: 0;
   overflow: hidden;
+  overflow-y: auto;
+  padding-right: 0.2rem;
   color: rgb(18 16 14 / 0.78);
   font-family: "Triple Condensed", "Arial Narrow", Arial, sans-serif;
   font-size: 0.84rem;
   line-height: 1.13;
-  -webkit-box-orient: vertical;
-  -webkit-line-clamp: 3;
 }
 
 .ta-operation-card-footer {
   display: flex;
   align-items: end;
-  justify-content: space-between;
+  justify-content: center;
   gap: 0.5rem;
   border-top: 2px solid rgb(18 16 14 / 0.18);
   padding-top: 0.45rem;

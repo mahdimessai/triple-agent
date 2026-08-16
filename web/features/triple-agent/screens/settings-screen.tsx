@@ -69,7 +69,7 @@ const OperationCard = memo(function OperationCard({ operation, label, enabled, d
         <span className="ta-display text-base leading-none">{operation.name}</span>
         <span className="ta-condensed text-[0.58rem] tracking-[0.12em] text-black/55">{label}</span>
       </span>
-      <span className="ta-operation-card-brief">{operationBrief(operation)}</span>
+      <span className="ta-operation-card-brief ta-scrollbar">{operationBrief(operation)}</span>
       <span className="ta-operation-card-footer justify-center">
         <span className="ta-condensed shrink-0 text-[0.62rem] tracking-[0.1em]">{enabled ? "ENABLED" : "DISABLED"}</span>
       </span>
