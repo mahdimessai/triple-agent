@@ -1,0 +1,10 @@
+root = "."
+tmp_dir = "server/tmp"
+
+[build]
+  bin = "server/tmp/triple-agent-server"
+  cmd = "go build -o ./server/tmp/triple-agent-server ./server/cmd/server"
+  delay = 1000
+  exclude_dir = ["server/tmp", "vendor"]
+  include_ext = ["go"]
+  stop_on_error = true

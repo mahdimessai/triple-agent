@@ -1,0 +1,27 @@
+services:
+  server:
+    build:
+      context: .
+      dockerfile: server/Dockerfile.dev
+    volumes:
+      - .:/workspace
+    working_dir: /workspace
+    command: air -c .air.toml
+
+  web:
+    build:
+      context: .
+      dockerfile: web/Dockerfile.dev
+    volumes:
+      - .:/app
+      - web_node_modules:/app/node_modules
+      - web_next:/app/web/.next
+    working_dir: /app
+    command: npm run dev
+    environment:
+      NODE_ENV: development
+      NEXT_TELEMETRY_DISABLED: "1"
+
+volumes:
+  web_node_modules:
+  web_next:

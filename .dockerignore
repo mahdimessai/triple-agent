@@ -1,0 +1,66 @@
+# Version control
+.git
+.gitignore
+.gitattributes
+
+# Editor / IDE directories
+.idea
+.vscode
+*.swp
+*.swo
+
+# Agent & workspace state
+.swarm
+.opencode
+.antigravity
+.gemini
+
+# Documentation & artifacts
+README.md
+*.md
+docs
+contact-sheets
+screenshots
+code-review-current-snapshot-*
+
+# Environment variables & secrets
+.env
+.env.*
+*.env
+*.env.*
+!*.env.example
+
+# Logs
+logs
+*.log
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+pnpm-debug.log*
+
+# Node / Web build artifacts
+node_modules
+**/node_modules
+web/.next
+web/out
+web/dist
+web/coverage
+*.tsbuildinfo
+
+# Go / Backend binaries & artifacts
+server/bin
+server/tmp
+server/coverage.out
+*.exe
+*.dll
+*.so
+*.dylib
+*.out
+*.test
+profile.pprof
+
+# OS artifacts
+.DS_Store
+Thumbs.db
+ehthumbs.db
+[Dd]esktop.ini

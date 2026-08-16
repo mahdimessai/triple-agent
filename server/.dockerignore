@@ -1,0 +1,29 @@
+# Version control & tooling
+.git
+.gitignore
+.gitattributes
+.idea
+.vscode
+.swarm
+.opencode
+
+# Build artifacts & binaries
+bin/
+tmp/
+*.exe
+*.dll
+*.so
+*.dylib
+*.out
+*.test
+coverage.out
+profile.pprof
+
+# Env files
+.env
+.env.*
+*.env
+
+# Docs & logs
+*.md
+*.log

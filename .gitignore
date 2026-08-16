@@ -1,0 +1,73 @@
+# Operating System Files
+.DS_Store
+.DS_Store?
+._*
+.Spotlight-V100
+.Trashes
+ehthumbs.db
+Thumbs.db
+[Dd]esktop.ini
+$RECYCLE.BIN/
+
+# IDE and Editor Files
+.idea/
+.vscode/
+*.swp
+*.swo
+*~
+*.sublime-project
+*.sublime-workspace
+.fleet/
+.zed/
+
+# Agent / Tooling Artifacts & Temporary State
+.swarm/
+.antigravity/
+.gemini/
+
+# Environment and Secret Files
+.env
+.env.local
+.env.development.local
+.env.test.local
+.env.production.local
+*.env
+*.env.*
+!*.env.example
+
+# Logs and Debugging
+logs/
+*.log
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+pnpm-debug.log*
+lerna-debug.log*
+
+# Node / Web (Next.js / TypeScript)
+node_modules/
+dist/
+build/
+out/
+.next/
+*.tsbuildinfo
+next-env.d.ts
+coverage/
+.nyc_output/
+.turbo/
+.vercel/
+
+# Go Backend
+server/bin/
+server/tmp/
+server/vendor/
+*.exe
+*.exe~
+*.dll
+*.so
+*.dylib
+*.test
+*.out
+cover.out
+coverage.out
+profile.pprof

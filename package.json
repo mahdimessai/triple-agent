@@ -1,0 +1,19 @@
+{
+  "name": "triple-agent",
+  "version": "0.1.0",
+  "private": true,
+  "workspaces": [
+    "web"
+  ],
+  "scripts": {
+    "dev": "npm run dev --workspace triple-agent-web",
+    "build": "npm run build --workspace triple-agent-web",
+    "start": "npm run start --workspace triple-agent-web",
+    "lint": "npm run lint --workspace triple-agent-web",
+    "typecheck": "npm run typecheck --workspace triple-agent-web",
+    "server:dev": "go run ./server/cmd/server",
+    "server:test": "go test ./server/...",
+    "up": "docker compose up --build",
+    "down": "docker compose down"
+  }
+}
