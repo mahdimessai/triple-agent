@@ -96,8 +96,7 @@ const RoleCard = memo(function RoleCard({ role, enabled, disabled, onToggle }: {
         <span className={`ta-condensed text-[0.58rem] tracking-[0.12em] ${role.faction === "VIRUS" ? "text-ta-red" : "text-[#1d5b79]"}`}>{role.faction}</span>
       </span>
       <span className="ta-operation-card-brief">{role.effect}</span>
-      <span className="ta-operation-card-footer">
-        <span className="ta-condensed min-w-0 truncate text-[0.62rem] tracking-[0.08em] text-black/55">Dealt to a {role.faction === "VIRUS" ? "VIRUS" : "SERVICE"} agent</span>
+      <span className="ta-operation-card-footer justify-center">
         <span className="ta-condensed shrink-0 text-[0.62rem] tracking-[0.1em]">{enabled ? "ENABLED" : "DISABLED"}</span>
       </span>
     </button>
