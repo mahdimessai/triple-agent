@@ -2,9 +2,11 @@ import { useEffect, useMemo, useState } from "react";
 import { ArtStamp } from "@/components/ui/art-stamp";
 import { InkButton } from "@/components/ui/ink-button";
 import { PaperTitle } from "@/components/ui/paper-title";
+import { getRole } from "@/components/triple-agent/role-catalog";
 import type { Faction, RoomProjection } from "@/components/triple-agent/server-client";
 
 export function ResultsScreen({ projection, loading = false, onRestart }: { projection?: RoomProjection; loading?: boolean; onRestart: () => void }) {
+  type LeaderboardEntry = NonNullable<RoomProjection["public"]["leaderboard"]>[number];
   const isHost = projection ? projection.public.host_id === projection.private.player_id : true;
   const imprisoned = useMemo(() => {
     return projection
@@ -19,7 +21,7 @@ export function ResultsScreen({ projection, loading = false, onRestart }: { proj
 
   const winner: Faction = projection?.public.winner ?? "SERVICE";
 
-  const fallbackRoster = useMemo(() => [
+  const fallbackRoster = useMemo<LeaderboardEntry[]>(() => [
     { player_id: "p1", name: "PLAYER A", faction: "SERVICE" as Faction, votes: 0, result: "WINNER" },
     { player_id: "p2", name: "PLAYER B", faction: "VIRUS" as Faction, votes: 3, result: "LOSER" },
     { player_id: "p3", name: "PLAYER C", faction: "SERVICE" as Faction, votes: 1, result: "WINNER" },
@@ -144,6 +146,12 @@ export function ResultsScreen({ projection, loading = false, onRestart }: { proj
               {rosterEntries.map((player) => {
                 const isVirus = player.faction === "VIRUS";
                 const isImprisoned = player.player_id === imprisoned?.id || player.name === imprisoned?.name;
+                const specialRole = player.role ? getRole(player.role) : undefined;
+                const defectorArtName = player.defection === "BLUE_DEFECTOR"
+                  ? "defectorBlue"
+                  : player.defection === "RED_DEFECTOR"
+                    ? "defectorRed"
+                    : undefined;
                 return (
                   <div className="flex items-center justify-between gap-3 border-t-2 border-black/15 pt-2" key={player.player_id}>
                     <div className="flex min-w-0 items-center gap-3">
@@ -165,6 +173,24 @@ export function ResultsScreen({ projection, loading = false, onRestart }: { proj
                       <span className={`ta-condensed text-xs font-bold tracking-[0.12em] ${isVirus ? "text-ta-red" : "text-[#1d5b79]"}`}>
                         {player.faction}
                       </span>
+                      {specialRole ? (
+                        <span
+                          aria-label={`${specialRole.name} role`}
+                          className="inline-flex h-8 w-7 items-center justify-center border border-black/15 bg-black/5"
+                          title={specialRole.name}
+                        >
+                          <ArtStamp artName={specialRole.artName} alt={`${specialRole.name} role`} className="h-7 w-auto object-contain" />
+                        </span>
+                      ) : null}
+                      {defectorArtName ? (
+                        <span
+                          aria-label={player.defection === "BLUE_DEFECTOR" ? "Blue defector" : "Red defector"}
+                          className="inline-flex h-8 w-7 items-center justify-center border border-black/15 bg-black/5"
+                          title={player.defection === "BLUE_DEFECTOR" ? "Blue defector" : "Red defector"}
+                        >
+                          <ArtStamp artName={defectorArtName} alt={player.defection === "BLUE_DEFECTOR" ? "Blue defector" : "Red defector"} className="h-7 w-auto object-contain" />
+                        </span>
+                      ) : null}
                       <span className="ta-condensed text-xs text-black/50">
                         · {player.votes} {player.votes === 1 ? "VOTE" : "VOTES"}
                       </span>

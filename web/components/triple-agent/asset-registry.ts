@@ -10,6 +10,8 @@ export const art = {
   operations: { src: "/triple-agent/art/operations-icon.png", width: 124, height: 108 },
   accusation: { src: "/triple-agent/art/accusation.png", width: 988, height: 573 },
   defect: { src: "/triple-agent/art/defect.png", width: 579, height: 528 },
+  defectorBlue: { src: "/triple-agent/art/defector-blue-238.png", width: 317, height: 497 },
+  defectorRed: { src: "/triple-agent/art/defector-red-252.png", width: 317, height: 497 },
   handcuffs: { src: "/triple-agent/art/handcuffs.png", width: 694, height: 440 },
   imprisoned: { src: "/triple-agent/art/imprisoned.png", width: 725, height: 589 },
   results: { src: "/triple-agent/art/results.png", width: 744, height: 744 },
@@ -44,10 +46,10 @@ export const art = {
   playAgain: { src: "/triple-agent/art/play-again.png", width: 354, height: 357 },
   roleRogueAgent: { src: "/triple-agent/art/role-rogue-agent.png", width: 403, height: 409 },
   roleTripleAgent: { src: "/triple-agent/art/role-triple-agent.png", width: 428, height: 451 },
-  roleDeepCover: { src: "/triple-agent/art/role-deep-cover.png", width: 453, height: 482 },
-  roleSuspicious: { src: "/triple-agent/art/role-suspicious.png", width: 453, height: 482 },
-  roleServiceLoyalist: { src: "/triple-agent/art/role-service-loyalist.png", width: 401, height: 491 },
-  roleVirusLoyalist: { src: "/triple-agent/art/role-virus-loyalist.png", width: 401, height: 491 },
+  roleDeepCover: { src: "/triple-agent/art/role-deep-cover-lying-red-256.png", width: 453, height: 482 },
+  roleSuspicious: { src: "/triple-agent/art/role-suspicious-lying-blue-206.png", width: 453, height: 482 },
+  roleServiceLoyalist: { src: "/triple-agent/art/role-service-loyalist-loyal-blue-234.png", width: 401, height: 491 },
+  roleVirusLoyalist: { src: "/triple-agent/art/role-virus-loyalist-loyal-red-247.png", width: 401, height: 491 },
 } as const;
 
 export type ArtName = keyof typeof art;

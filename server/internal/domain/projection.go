@@ -83,11 +83,13 @@ type PublicRoomSettings struct {
 }
 
 type LeaderboardEntry struct {
-	PlayerID string  `json:"player_id"`
-	Name     string  `json:"name"`
-	Faction  Faction `json:"faction"`
-	Votes    int     `json:"votes"`
-	Result   string  `json:"result"`
+	PlayerID  string   `json:"player_id"`
+	Name      string   `json:"name"`
+	Faction   Faction  `json:"faction"`
+	Role      RoleKind `json:"role,omitempty"`
+	Defection string   `json:"defection,omitempty"`
+	Votes     int      `json:"votes"`
+	Result    string   `json:"result"`
 }
 
 type PublicProjection struct {

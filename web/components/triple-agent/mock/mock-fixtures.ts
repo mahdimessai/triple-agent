@@ -54,7 +54,13 @@ export type MockFixture = {
     agencyReveal: string;
     winner: "SERVICE" | "VIRUS";
     winnerReason: string;
-    leaderboard: readonly { player: string; score: number; faction: string }[];
+    leaderboard: readonly {
+      player: string;
+      score: number;
+      faction: string;
+      role?: string;
+      defection?: "BLUE_DEFECTOR" | "RED_DEFECTOR";
+    }[];
     outOfLoop: readonly string[];
   };
   activity: readonly MockActivityEntry[];
@@ -126,16 +132,16 @@ export const mockFixture = {
     winner: "VIRUS",
     winnerReason: "A Service player was imprisoned while the Virus remained hidden.",
     leaderboard: [
-      { player: "PLAYER B", score: 4, faction: "VIRUS" },
-      { player: "PLAYER E", score: 3, faction: "VIRUS" },
-      { player: "PLAYER A", score: 2, faction: "SERVICE" },
-      { player: "PLAYER C", score: 2, faction: "SERVICE" },
-      { player: "PLAYER D", score: 1, faction: "SERVICE" },
+      { player: "PLAYER B", score: 4, faction: "VIRUS", role: "LOYAL_RED" },
+      { player: "PLAYER E", score: 3, faction: "VIRUS", role: "LYING_RED" },
+      { player: "PLAYER A", score: 2, faction: "SERVICE", role: "FAKE_RED" },
+      { player: "PLAYER C", score: 2, faction: "VIRUS", role: "LYING_BLUE", defection: "BLUE_DEFECTOR" },
+      { player: "PLAYER D", score: 1, faction: "SERVICE", role: "FAKE_BLUE", defection: "RED_DEFECTOR" },
     ],
     outOfLoop: [
       "PLAYER D is out of the loop for the next operation.",
       "The table can still see the public result.",
-      "Private role information remains hidden.",
+      "Final role and defection markers are now public.",
     ],
   },
   activity: [

@@ -54,14 +54,26 @@ func buildLeaderboard(state GameState) []LeaderboardEntry {
 			result = "WINNER"
 		}
 		entries = append(entries, LeaderboardEntry{
-			PlayerID: id,
-			Name:     player.Name,
-			Faction:  player.Faction,
-			Votes:    state.Vote.Totals[id],
-			Result:   result,
+			PlayerID:  id,
+			Name:      player.Name,
+			Faction:   player.Faction,
+			Role:      player.Role,
+			Defection: defectionFor(player),
+			Votes:     state.Vote.Totals[id],
+			Result:    result,
 		})
 	}
 	return entries
+}
+
+func defectionFor(player PlayerState) string {
+	for _, status := range player.Statuses {
+		switch status {
+		case "BLUE_DEFECTOR", "RED_DEFECTOR":
+			return status
+		}
+	}
+	return ""
 }
 
 func playerWins(state GameState, playerID string) bool {

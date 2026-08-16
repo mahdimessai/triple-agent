@@ -78,6 +78,8 @@ export type RoomProjection = {
       player_id: string;
       name: string;
       faction: Faction;
+      role?: string;
+      defection?: "BLUE_DEFECTOR" | "RED_DEFECTOR";
       votes: number;
       result: "WINNER" | "LOSER" | "DRAW";
     }>;

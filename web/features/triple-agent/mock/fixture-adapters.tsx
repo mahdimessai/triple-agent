@@ -48,6 +48,8 @@ function fixtureProjection(fixture: MockFixture, phase: Phase, operationId?: Ope
     player_id: playerIDByName.get(entry.player) ?? entry.player,
     name: entry.player,
     faction: (entry.faction === "VIRUS" ? "VIRUS" : "SERVICE") as Faction,
+    role: entry.role,
+    defection: entry.defection,
     votes: fixture.results.voteTotals.find((vote) => vote.player === entry.player)?.votes ?? 0,
     result: entry.faction === fixture.results.winner ? "WINNER" as const : "LOSER" as const,
   }));
