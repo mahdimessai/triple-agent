@@ -22,7 +22,11 @@ export function GameShell({ children, screen, setScreen, session, connectionStat
   return (
     <main className="ta-viewport">
       <section className="ta-device">
-        <GameHeader screen={screen} toggleSettings={toggleSettings} liveSession={liveSession} />
+        <GameHeader
+            screen={screen}
+            toggleSettings={toggleSettings}
+            liveSession={liveSession}
+            goHome={screen === "settings" ? () => setScreen("title") : undefined}/>
         {offline ? <p className="ta-connection-banner" role="status">{reconnecting ? "Reconnecting to the room…" : connectionState === "connecting" ? "Connecting to the room…" : "Connection lost: your actions will not reach the room"}</p> : null}
         <div className="ta-stage"><div className="ta-stage-inner">{children}</div></div>
       </section>
