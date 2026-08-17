@@ -147,7 +147,24 @@ export function LobbyScreen({
                     {isLive && blockedReason ? <p className="ta-condensed text-center text-sm text-white/80">{blockedReason}</p> : null}
                 </>
             )}
-            {isLive ? <button className="ta-secondary-button w-full" onClick={() => { if (window.confirm("Leave this lobby? Your seat will be given up.")) onLeave?.(); }} disabled={leaving} aria-busy={leaving ? true : undefined} type="button">{leaving ? <span className="ta-button-loading"><span className="ta-button-spinner" aria-hidden="true" />Leaving…</span> : "Leave lobby"}</button> : null}
+            {isLive ? (
+                <button
+                    className="ta-secondary-button w-full"
+                    onClick={onLeave}
+                    disabled={leaving}
+                    aria-busy={leaving ? true : undefined}
+                    type="button"
+                >
+                    {leaving ? (
+                        <span className="ta-button-loading">
+                            <span className="ta-button-spinner" aria-hidden="true" />
+                            Leaving…
+                        </span>
+                    ) : (
+                        "Leave lobby"
+                    )}
+                </button>
+            ) : null}
         </div>
     );
 }

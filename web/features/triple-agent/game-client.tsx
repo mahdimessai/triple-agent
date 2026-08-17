@@ -129,9 +129,17 @@ export function GameClient() {
     }
   }
 
+  function handleGoHome() {
+    if (session) {
+      void leaveRoom();
+    } else {
+      setScreen("title");
+    }
+  }
+
   const liveOperationId = operationIdForServerKind(projection?.public.operation?.kind);
   return (
-      <GameShell screen={screen} setScreen={setScreen} session={session} connectionState={connectionState} reconnecting={reconnecting}>
+      <GameShell screen={screen} setScreen={setScreen} session={session} connectionState={connectionState} reconnecting={reconnecting} onHome={handleGoHome}>
         <ScreenContent
             screen={screen}
             playerName={playerName}

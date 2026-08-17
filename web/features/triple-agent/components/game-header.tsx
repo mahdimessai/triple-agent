@@ -13,21 +13,21 @@ export function GameHeader({
     liveSession: boolean;
     goHome?: () => void;
 }) {
+    const inGame = screen !== "title" && screen !== "join" && screen !== "lobby" && screen !== "settings";
+
     return (
         <header className="ta-header border-b-4 border-black bg-ta-orange-deep px-3 py-3 text-ta-paper lg:px-5">
             <div className="ta-header-inner">
                 <div className="flex min-w-0 items-center gap-3">
-                    {goHome ? (
+                    {!inGame ? (
                         <button
                             type="button"
                             onClick={goHome}
                             className="ta-header-brand cursor-pointer"
-                            aria-label="Go to home page">
+                            aria-label="Return to main menu">
                             Triple Agent
                         </button>
-                    ) : (
-                        <h1 className="ta-header-brand">Triple Agent</h1>
-                    )}
+                    ) : null}
                 </div>
 
                 <nav
