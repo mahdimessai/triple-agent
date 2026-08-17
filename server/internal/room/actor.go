@@ -186,6 +186,14 @@ func (r *Room) loop(state domain.GameState) {
 					dedupe = make(map[string]dedupeEntry)
 					dedupeOrder = dedupeOrder[:0]
 				}
+				for playerID, session := range sessions {
+					if _, exists := state.Players[playerID]; !exists {
+						delete(sessions, playerID)
+						if session.close != nil {
+							session.close()
+						}
+					}
+				}
 				projection := domain.Project(state, command.ActorID)
 				if command.RequestID != "" {
 					dedupe, dedupeOrder = rememberDedupe(dedupe, dedupeOrder, command.RequestID, dedupeEntry{actorID: command.ActorID, projection: projection})

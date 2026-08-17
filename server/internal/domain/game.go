@@ -46,6 +46,8 @@ const (
 	CommandSetRoleEnabled        CommandKind = "lobby.role_enabled"
 	CommandSetDiscussionTimer    CommandKind = "lobby.discussion_timer"
 	CommandSetVirusCount         CommandKind = "lobby.virus_count"
+	CommandTransferHost          CommandKind = "lobby.transfer_host"
+	CommandKickPlayer            CommandKind = "lobby.kick_player"
 )
 
 type Faction string

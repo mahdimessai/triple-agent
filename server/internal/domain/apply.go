@@ -16,6 +16,34 @@ func Apply(state GameState, command Command, now time.Time) (Transition, error) 
 	}
 
 	switch command.Kind {
+	case CommandTransferHost:
+		if state.Phase != PhaseLobby || command.ActorID != state.HostID {
+			return Transition{}, ErrNotAllowed
+		}
+		if command.TargetID == state.HostID {
+			return Transition{State: state}, nil
+		}
+		target, exists := state.Players[command.TargetID]
+		if !exists {
+			return Transition{}, ErrInvalidTarget
+		}
+		state.HostID = command.TargetID
+		return commit(state, "HOST_TRANSFERRED", player.Name+" transferred host to "+target.Name, now), nil
+
+	case CommandKickPlayer:
+		if state.Phase != PhaseLobby || command.ActorID != state.HostID {
+			return Transition{}, ErrNotAllowed
+		}
+		if command.TargetID == state.HostID {
+			return Transition{}, ErrNotAllowed
+		}
+		target, exists := state.Players[command.TargetID]
+		if !exists {
+			return Transition{}, ErrInvalidTarget
+		}
+		state = removeSeat(state, command.TargetID)
+		return commit(state, "PLAYER_KICKED", player.Name+" kicked "+target.Name+" from the lobby", now), nil
+
 	case CommandRematch:
 		if (!isResultsPhase(state.Phase) && state.Phase != PhaseEnd) || command.ActorID != state.HostID {
 			return Transition{}, ErrNotAllowed

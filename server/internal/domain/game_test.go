@@ -155,6 +155,55 @@ func readyFivePlayerMatch(t *testing.T, settings RoomSettings, now time.Time) Ga
 	return state
 }
 
+func TestTransferHostAndKickPlayerInLobby(t *testing.T) {
+	state := NewLobby("room_test", "p1", "Agent A", DefaultRoomSettings())
+	now := time.Date(2026, 8, 15, 12, 0, 0, 0, time.UTC)
+	if err := state.AddPlayer("p2", "Agent B"); err != nil {
+		t.Fatal(err)
+	}
+	if err := state.AddPlayer("p3", "Agent C"); err != nil {
+		t.Fatal(err)
+	}
+
+	// Non-host cannot transfer host or kick
+	if _, err := Apply(state, Command{ActorID: "p2", ExpectedVersion: state.Version, Kind: CommandTransferHost, TargetID: "p2"}, now); err != ErrNotAllowed {
+		t.Fatalf("non-host transfer err = %v, want %v", err, ErrNotAllowed)
+	}
+	if _, err := Apply(state, Command{ActorID: "p2", ExpectedVersion: state.Version, Kind: CommandKickPlayer, TargetID: "p3"}, now); err != ErrNotAllowed {
+		t.Fatalf("non-host kick err = %v, want %v", err, ErrNotAllowed)
+	}
+
+	// Host p1 transfers host to p2
+	transition, err := Apply(state, Command{ActorID: "p1", ExpectedVersion: state.Version, Kind: CommandTransferHost, TargetID: "p2"}, now)
+	if err != nil {
+		t.Fatal(err)
+	}
+	state = transition.State
+	if state.HostID != "p2" {
+		t.Fatalf("hostID = %s, want p2", state.HostID)
+	}
+
+	// Former host p1 can no longer kick
+	if _, err := Apply(state, Command{ActorID: "p1", ExpectedVersion: state.Version, Kind: CommandKickPlayer, TargetID: "p3"}, now); err != ErrNotAllowed {
+		t.Fatalf("former host kick err = %v, want %v", err, ErrNotAllowed)
+	}
+
+	// Host p2 cannot kick self
+	if _, err := Apply(state, Command{ActorID: "p2", ExpectedVersion: state.Version, Kind: CommandKickPlayer, TargetID: "p2"}, now); err != ErrNotAllowed {
+		t.Fatalf("host kick self err = %v, want %v", err, ErrNotAllowed)
+	}
+
+	// Host p2 kicks p3
+	transition, err = Apply(state, Command{ActorID: "p2", ExpectedVersion: state.Version, Kind: CommandKickPlayer, TargetID: "p3"}, now)
+	if err != nil {
+		t.Fatal(err)
+	}
+	state = transition.State
+	if len(state.PlayerOrder) != 2 || state.Players["p3"].ID != "" {
+		t.Fatalf("player order after kick = %#v", state.PlayerOrder)
+	}
+}
+
 func TestOperationPoolServesEverySlotBeforeRepeating(t *testing.T) {
 	settings := DefaultRoomSettings()
 	settings.EnabledOperations = map[string]bool{

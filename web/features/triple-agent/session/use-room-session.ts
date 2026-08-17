@@ -54,6 +54,7 @@ export function useRoomSession({ screen, onScreenChange }: UseRoomSessionOptions
   const [leaving, setLeaving] = useState(false);
   const [roomAction, setRoomAction] = useState<RoomAction>();
   const [pendingCommand, setPendingCommand] = useState<ClientCommand["kind"]>();
+  const [kickedFromLobby, setKickedFromLobby] = useState(false);
   const socketRef = useRef<RoomConnection | null>(null);
   const sessionRef = useRef<LobbySession | undefined>(undefined);
   const roomActionRef = useRef<RoomAction | undefined>(undefined);
@@ -63,6 +64,7 @@ export function useRoomSession({ screen, onScreenChange }: UseRoomSessionOptions
   const reconnectAttemptRef = useRef(0);
   const reconnectDeadlineRef = useRef<number | undefined>(undefined);
   const phaseRef = useRef<Phase | undefined>(undefined);
+  const leavingRef = useRef(false);
 
   useEffect(() => {
     screenRef.current = screen;
@@ -104,6 +106,7 @@ export function useRoomSession({ screen, onScreenChange }: UseRoomSessionOptions
     socketRef.current = null;
     reconnectAttemptRef.current = 0;
     phaseRef.current = undefined;
+    leavingRef.current = false;
     clearRoomAction();
     clearPendingCommand();
     sessionRef.current = undefined;
@@ -131,8 +134,15 @@ export function useRoomSession({ screen, onScreenChange }: UseRoomSessionOptions
     setRoomCode(nextSession.join_code);
     setConnectionState("closed");
     setReconnecting(false);
-    setError("Your lobby seat was released; join again to return to the room.");
+    if (!leavingRef.current) {
+      setKickedFromLobby(true);
+    }
+    leavingRef.current = false;
     onScreenChange("join");
+  }
+
+  function dismissKickedPopup() {
+    setKickedFromLobby(false);
   }
 
   function openSessionSocket(nextSession: LobbySession) {
@@ -144,8 +154,8 @@ export function useRoomSession({ screen, onScreenChange }: UseRoomSessionOptions
       phaseRef.current = nextProjection.public.phase;
       setTimerEnabled(nextProjection.public.settings.discussion_timer_enabled);
       const nextScreen = screenRef.current === "settings" && nextProjection.public.phase === "LOBBY"
-        ? "settings"
-        : screenForPhase(nextProjection.public.phase);
+          ? "settings"
+          : screenForPhase(nextProjection.public.phase);
       onScreenChange(nextScreen);
     }, (requestId, ok, commandError) => {
       if (attempt !== connectionAttemptRef.current) return;
@@ -166,19 +176,16 @@ export function useRoomSession({ screen, onScreenChange }: UseRoomSessionOptions
         socketRef.current = null;
         if (phaseRef.current === "LOBBY") releaseLobbySession(nextSession);
         else if (details?.terminal) expireSession(details.message ?? SESSION_EXPIRED_MESSAGE);
-        else scheduleReconnect(nextSession);
+        else scheduleReconnect(nextSession, Date.now());
       }
     });
     socketRef.current = connection;
   }
 
-  function scheduleReconnect(nextSession: LobbySession) {
+  function scheduleReconnect(nextSession: LobbySession, now: number) {
     if (reconnectTimerRef.current !== undefined) return;
     if (sessionRef.current?.room_id !== nextSession.room_id) return;
     setReconnecting(true);
-    // Reconnect scheduling runs from a socket event, not during render.
-    // eslint-disable-next-line react-hooks/purity
-    const now = Date.now();
     const deadline = reconnectDeadline(now, reconnectDeadlineRef.current, RECONNECT_GRACE_PERIOD_MS);
     reconnectDeadlineRef.current = deadline;
     const remaining = deadline - now;
@@ -201,11 +208,13 @@ export function useRoomSession({ screen, onScreenChange }: UseRoomSessionOptions
 
   function connectSession(nextSession: LobbySession) {
     sessionRef.current = nextSession;
+    leavingRef.current = false;
     phaseRef.current = undefined;
     saveLobbySession(nextSession);
     reconnectAttemptRef.current = 0;
     reconnectDeadlineRef.current = undefined;
     setReconnecting(false);
+    setKickedFromLobby(false);
     clearPendingCommand();
     closeSessionSocket();
     setSession(nextSession);
@@ -251,8 +260,6 @@ export function useRoomSession({ screen, onScreenChange }: UseRoomSessionOptions
       window.removeEventListener("pageshow", handlePageShow);
       closeSessionSocket();
     };
-    // The session callbacks intentionally close over the one-time lifecycle handlers above.
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   async function createRoom(playerName = "") {
@@ -300,6 +307,7 @@ export function useRoomSession({ screen, onScreenChange }: UseRoomSessionOptions
       onScreenChange("title");
       return;
     }
+    leavingRef.current = true;
     setLeaving(true);
     try {
       await leaveLobby(currentSession);
@@ -308,12 +316,11 @@ export function useRoomSession({ screen, onScreenChange }: UseRoomSessionOptions
       clearLobbySession();
       setSession(undefined);
       setProjection(undefined);
-      // Keep the code in the join form so a former host can immediately join
-      // the lobby again as a new, ordinary player.
       setRoomCode(currentSession.join_code);
       setError(undefined);
       onScreenChange("join");
     } catch (cause) {
+      leavingRef.current = false;
       setError(cause instanceof Error ? cause.message : "Could not leave the room");
     } finally {
       setLeaving(false);
@@ -324,8 +331,8 @@ export function useRoomSession({ screen, onScreenChange }: UseRoomSessionOptions
   function sendCommand(kind: ClientCommand["kind"], payload?: CommandPayload): void;
   function sendCommand(commandOrKind: ClientCommand | ClientCommand["kind"], payload?: CommandPayload) {
     const command = typeof commandOrKind === "string"
-      ? clientCommandFromLegacy(commandOrKind, payload)
-      : commandOrKind;
+        ? clientCommandFromLegacy(commandOrKind, payload)
+        : commandOrKind;
     if (!projection || !socketRef.current) {
       setError("Connect to a room before sending an action");
       return;
@@ -356,6 +363,8 @@ export function useRoomSession({ screen, onScreenChange }: UseRoomSessionOptions
     error,
     roomAction,
     pendingCommand,
+    kickedFromLobby,
+    dismissKickedPopup,
     createRoom,
     joinRoom,
     leaveRoom,

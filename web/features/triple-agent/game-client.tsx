@@ -3,6 +3,7 @@
 import dynamic from "next/dynamic";
 import { useEffect, useRef, useState } from "react";
 import type { OperationId } from "@/components/triple-agent/operation-catalog";
+import { InkButton } from "@/components/ui/ink-button";
 import { GameShell } from "@/features/triple-agent/components/game-shell";
 import { TitleScreen } from "@/features/triple-agent/screens/title-screen";
 import { operationIdForServerKind, type CommandPayload, type CommandSender, type ScreenId } from "@/features/triple-agent/model/screen";
@@ -50,7 +51,7 @@ function ScreenContent({ screen, playerName, setPlayerName, roomCode, setRoomCod
   switch (screen) {
     case "title":
     case "join": return <TitleScreen playerName={playerName} setPlayerName={setPlayerName} roomCode={roomCode} setRoomCode={setRoomCode} joining={screen === "join"} roomAction={roomAction} onStart={onCreateRoom} onJoin={onJoinRoom} onOpenJoin={() => navigate("join")} onCancelJoin={() => navigate("title")} error={error} />;
-    case "lobby": return <LobbyScreen roomCode={roomCode} roomCodeCopied={roomCodeCopied} copyRoomCode={copyRoomCode} livePlayers={projection?.public.players} hostId={projection?.public.host_id} selfId={projection?.private.player_id} minPlayers={projection?.public.settings.min_players} liveSession={liveSession} isHost={projection?.public.host_id === projection?.private.player_id} canReady={Boolean(projection)} isReady={projection?.public.players.find((player) => player.id === projection.private.player_id)?.ready} readyLoading={pendingCommand === "lobby.ready"} startLoading={pendingCommand === "match.start"} onReady={() => onCommand?.("lobby.ready")} onStart={() => projection ? onCommand?.("match.start") : navigate("mission")} onLeave={onLeave} leaving={leaving} error={error} />;
+    case "lobby": return <LobbyScreen roomCode={roomCode} roomCodeCopied={roomCodeCopied} copyRoomCode={copyRoomCode} livePlayers={projection?.public.players} hostId={projection?.public.host_id} selfId={projection?.private.player_id} minPlayers={projection?.public.settings.min_players} liveSession={liveSession} isHost={projection?.public.host_id === projection?.private.player_id} canReady={Boolean(projection)} isReady={projection?.public.players.find((player) => player.id === projection.private.player_id)?.ready} readyLoading={pendingCommand === "lobby.ready"} startLoading={pendingCommand === "match.start"} onReady={() => onCommand?.("lobby.ready")} onStart={() => projection ? onCommand?.("match.start") : navigate("mission")} onTransferHost={(targetId) => onCommand?.("lobby.transfer_host", { targetId })} onKickPlayer={(targetId) => onCommand?.("lobby.kick_player", { targetId })} onLeave={onLeave} leaving={leaving} error={error} />;
     case "settings": return <SettingsScreen timerEnabled={timerEnabled} setTimerEnabled={setTimerEnabled} projection={projection} liveSession={liveSession} isHost={projection?.public.host_id === projection?.private.player_id} onCommand={onCommand} pending={Boolean(pendingCommand)} error={error} />;
     case "mission": return <MissionScreen onNext={() => navigate("role")} />;
     case "role": return <RoleScreen faction={projection?.private.faction} roleId={projection?.private.role} roleName={projection?.private.role_name} roleDescription={projection?.private.role_description} roleEffect={projection?.private.role_effect} virusRoster={projection?.private.virus_roster} virusTeamSize={projection?.private.virus_team_size} canSubmit={projection?.private.can_submit} waitingOn={projection?.public.pending_role_acks} loading={pendingCommand === "role.acknowledge"} onNext={() => projection ? onCommand?.("role.acknowledge") : navigate("operation")} />;
@@ -80,6 +81,8 @@ export function GameClient() {
     error,
     roomAction,
     pendingCommand,
+    kickedFromLobby,
+    dismissKickedPopup,
     createRoom,
     joinRoom,
     leaveRoom,
@@ -127,5 +130,56 @@ export function GameClient() {
   }
 
   const liveOperationId = operationIdForServerKind(projection?.public.operation?.kind);
-  return <GameShell screen={screen} setScreen={setScreen} session={session} connectionState={connectionState} reconnecting={reconnecting}><ScreenContent screen={screen} playerName={playerName} setPlayerName={setPlayerName} roomCode={roomCode} setRoomCode={setRoomCode} roomCodeCopied={roomCodeCopied} copyRoomCode={() => void copyRoomCode()} timerEnabled={timerEnabled} setTimerEnabled={setTimerEnabled} navigate={setScreen} operationId={liveOperationId} setOperationId={setOperationId} projection={projection} liveSession={Boolean(session)} onCommand={sendCommand} pendingCommand={pendingCommand} roomAction={roomAction} onCreateRoom={() => void createRoom(playerName)} onJoinRoom={() => void joinRoom(playerName)} onLeave={() => void leaveRoom()} leaving={leaving} error={error} /></GameShell>;
+  return (
+      <GameShell screen={screen} setScreen={setScreen} session={session} connectionState={connectionState} reconnecting={reconnecting}>
+        <ScreenContent
+            screen={screen}
+            playerName={playerName}
+            setPlayerName={setPlayerName}
+            roomCode={roomCode}
+            setRoomCode={setRoomCode}
+            roomCodeCopied={roomCodeCopied}
+            copyRoomCode={() => void copyRoomCode()}
+            timerEnabled={timerEnabled}
+            setTimerEnabled={setTimerEnabled}
+            navigate={setScreen}
+            operationId={liveOperationId}
+            setOperationId={setOperationId}
+            projection={projection}
+            liveSession={Boolean(session)}
+            onCommand={sendCommand}
+            pendingCommand={pendingCommand}
+            roomAction={roomAction}
+            onCreateRoom={() => void createRoom(playerName)}
+            onJoinRoom={() => void joinRoom(playerName)}
+            onLeave={() => void leaveRoom()}
+            leaving={leaving}
+            error={error}
+        />
+        {kickedFromLobby ? (
+            <div className="ta-join-backdrop" role="presentation" onClick={dismissKickedPopup}>
+              <div
+                  className="ta-paper ta-join-dialog text-center"
+                  role="dialog"
+                  aria-modal="true"
+                  aria-labelledby="kicked-dialog-title"
+                  onClick={(e) => e.stopPropagation()}
+              >
+                <p className="ta-condensed text-xs tracking-[0.2em] text-black/60">NOTICE</p>
+                <h2 id="kicked-dialog-title" className="ta-display mt-1 text-3xl text-ta-red">
+                  Kicked from Lobby
+                </h2>
+                <p className="ta-condensed mt-4 text-base leading-tight">
+                  You have been removed from the lobby by the host.
+                </p>
+                <div className="mt-6">
+                  <InkButton variant="orange" className="w-full" onClick={dismissKickedPopup}>
+                    Understood
+                  </InkButton>
+                </div>
+              </div>
+            </div>
+        ) : null}
+      </GameShell>
+  );
 }
