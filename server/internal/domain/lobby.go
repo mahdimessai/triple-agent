@@ -51,6 +51,11 @@ func resetForRematch(state *GameState) {
 	state.ActivePlayerID = ""
 	state.PlannedOperation = ""
 	state.OperationQueue = nil
+	state.OperationQueueIndex = 0
+	state.OperationDeck = nil
+	state.OperationLastKind = ""
+	state.OperationDealTarget = 0
+	state.OperationDeals = 0
 	state.OperationsDealt = nil
 	state.Operation = nil
 	state.DiscussionDeadline = nil

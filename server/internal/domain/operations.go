@@ -312,25 +312,21 @@ func initOperationQueue(state *GameState) {
 		queue[i], queue[j] = queue[j], queue[i]
 	}
 	state.OperationQueue = queue
+	state.OperationQueueIndex = 0
 }
 
-// nextOperationRecipient returns the next connected player who has not received
-// an operation yet.
-func nextOperationRecipient(state GameState) string {
-	dealt := make(map[string]bool, len(state.OperationsDealt))
-	for _, id := range state.OperationsDealt {
-		dealt[id] = true
-	}
-	if len(state.OperationQueue) > 0 {
-		for _, id := range state.OperationQueue {
-			if !dealt[id] && state.Players[id].Connected {
-				return id
-			}
-		}
+// nextOperationRecipient cycles through the shuffled recipient order. The
+// operation deck may outlive one player pass, so recipients are deliberately
+// independent from operation uniqueness.
+func nextOperationRecipient(state *GameState) string {
+	if len(state.OperationQueue) == 0 {
 		return ""
 	}
-	for _, id := range state.PlayerOrder {
-		if !dealt[id] && state.Players[id].Connected {
+	for attempts := 0; attempts < len(state.OperationQueue); attempts++ {
+		index := state.OperationQueueIndex % len(state.OperationQueue)
+		state.OperationQueueIndex = (index + 1) % len(state.OperationQueue)
+		id := state.OperationQueue[index]
+		if player, ok := state.Players[id]; ok && player.Connected {
 			return id
 		}
 	}
@@ -346,6 +342,7 @@ func beginPlannedOperation(state *GameState) error {
 		return err
 	}
 	state.OperationsDealt = append(state.OperationsDealt, state.ActivePlayerID)
+	state.OperationDeals++
 	if resolver.Definition().InputKind == OperationInputNone || resolver.Definition().InputKind == OperationInputPrivateInfo {
 		state.Phase = PhaseOperationResult
 	} else {
@@ -356,29 +353,184 @@ func beginPlannedOperation(state *GameState) error {
 
 func operationForStart(state *GameState, requested string) (OperationResolver, error) {
 	initOperationQueue(state)
-	firstRecipient := nextOperationRecipient(*state)
+	if err := initOperationDeck(state); err != nil {
+		return nil, err
+	}
+	state.OperationDealTarget = len(state.OperationDeck)
+	if len(state.PlayerOrder) > state.OperationDealTarget {
+		state.OperationDealTarget = len(state.PlayerOrder)
+	}
+	state.OperationDeals = 0
+	firstRecipient := nextOperationRecipient(state)
 	if firstRecipient == "" {
 		return nil, ErrNotEnoughPlayers
 	}
 	state.ActivePlayerID = firstRecipient
+	return takeOperationFromDeck(state, firstRecipient, requested, 1)
+}
 
+// operationDeckSlots creates one card per named operation and one card for the
+// entire Hidden Agenda envelope group. The enabled pool is fixed for a match;
+// only the order changes when a cycle is shuffled.
+func operationDeckSlots(state GameState) []string {
+	slots := make([]string, 0, len(operationResolvers))
+	hidden := false
+	for _, resolver := range operationResolvers {
+		definition := resolver.Definition()
+		if !dealableOperation(&state, definition) {
+			continue
+		}
+		if definition.Hidden {
+			hidden = true
+			continue
+		}
+		slots = append(slots, definition.ID)
+	}
+	if hidden {
+		slots = append(slots, HiddenAgendaKind)
+	}
+	return slots
+}
+
+func shuffleOperationDeck(state *GameState, slots []string) {
+	for i := len(slots) - 1; i > 0; i-- {
+		j := nextRandom(state, i+1)
+		slots[i], slots[j] = slots[j], slots[i]
+	}
+	// A fresh cycle is still random, but avoid an immediate boundary duplicate
+	// when another card is available.
+	if len(slots) > 1 && state.OperationLastKind != "" && slots[0] == state.OperationLastKind {
+		slots[0], slots[1] = slots[1], slots[0]
+	}
+	state.OperationDeck = slots
+}
+
+func initOperationDeck(state *GameState) error {
+	state.OperationDeck = nil
+	return refillOperationDeck(state)
+}
+
+func refillOperationDeck(state *GameState) error {
+	slots := operationDeckSlots(*state)
+	if len(slots) == 0 {
+		return ErrNoEligibleOperations
+	}
+	shuffleOperationDeck(state, slots)
+	return nil
+}
+
+func removeOperationDeckSlot(state *GameState, index int) string {
+	kind := state.OperationDeck[index]
+	state.OperationDeck = append(state.OperationDeck[:index], state.OperationDeck[index+1:]...)
+	state.OperationLastKind = kind
+	return kind
+}
+
+func playerHasCategory(player PlayerState, category int) bool {
+	if category <= 0 {
+		return false
+	}
+	for _, dealt := range player.DealtCategories {
+		if dealt == category {
+			return true
+		}
+	}
+	return false
+}
+
+func hiddenAgendaResolversFor(state *GameState, recipientID string, eventOrder int) []OperationResolver {
+	player := state.Players[recipientID]
+	members := make([]OperationResolver, 0)
+	for _, resolver := range operationResolvers {
+		definition := resolver.Definition()
+		if !definition.Hidden || definition.MinEventOrder > eventOrder || !dealableOperation(state, definition) || playerHasCategory(player, definition.Category) {
+			continue
+		}
+		members = append(members, resolver)
+	}
+	return members
+}
+
+func resolverForOperationSlot(state *GameState, slot, recipientID string, eventOrder int) OperationResolver {
+	if slot == HiddenAgendaKind {
+		return drawOperation(state, hiddenAgendaResolversFor(state, recipientID, eventOrder))
+	}
+	resolver, err := operationResolverFor(slot)
+	if err != nil {
+		return nil
+	}
+	definition := resolver.Definition()
+	if !dealableOperation(state, definition) || definition.MinEventOrder > eventOrder {
+		return nil
+	}
+	return resolver
+}
+
+func takeOperationFromDeck(state *GameState, recipientID, requested string, eventOrder int) (OperationResolver, error) {
 	requested = normalizeOperationKind(requested)
-	// Asking for Hidden Agenda asks for the cover, not for one envelope; the
-	// server still decides which member the recipient actually opens.
-	if requested == HiddenAgendaKind {
-		if resolver := drawOperation(state, hiddenAgendaResolvers(state)); resolver != nil {
-			recordDealtOperation(state, firstRecipient, resolver.Definition())
-			return resolver, nil
+	if requested != "" {
+		if requested == HiddenAgendaKind || IsHiddenAgendaMember(requested) {
+			member := ""
+			if requested != HiddenAgendaKind {
+				member = requested
+			}
+			for index, slot := range state.OperationDeck {
+				if slot != HiddenAgendaKind {
+					continue
+				}
+				var resolver OperationResolver
+				if member == "" {
+					resolver = drawOperation(state, hiddenAgendaResolversFor(state, recipientID, eventOrder))
+				} else if candidate, err := operationResolverFor(member); err == nil {
+					definition := candidate.Definition()
+					player := state.Players[recipientID]
+					if definition.MinEventOrder <= eventOrder && dealableOperation(state, definition) && !playerHasCategory(player, definition.Category) {
+						resolver = candidate
+					}
+				}
+				if resolver == nil {
+					return nil, ErrNotAllowed
+				}
+				removeOperationDeckSlot(state, index)
+				recordDealtOperation(state, recipientID, resolver.Definition())
+				return resolver, nil
+			}
+			return nil, ErrNotAllowed
 		}
-	}
-	if requested != "" && IsLiveOperation(requested) {
 		resolver, err := operationResolverFor(requested)
-		if err == nil && len(state.PlayerOrder) >= resolver.Definition().MinPlayers {
-			recordDealtOperation(state, firstRecipient, resolver.Definition())
+		if err != nil {
+			return nil, err
+		}
+		definition := resolver.Definition()
+		if !dealableOperation(state, definition) || definition.MinEventOrder > eventOrder {
+			return nil, ErrNotAllowed
+		}
+		for index, slot := range state.OperationDeck {
+			if slot != definition.ID {
+				continue
+			}
+			removeOperationDeckSlot(state, index)
+			recordDealtOperation(state, recipientID, definition)
 			return resolver, nil
 		}
+		return nil, ErrNotAllowed
 	}
-	return randomEligibleOperation(state, firstRecipient, 1)
+
+	if len(state.OperationDeck) == 0 {
+		if err := refillOperationDeck(state); err != nil {
+			return nil, err
+		}
+	}
+	for index, slot := range state.OperationDeck {
+		resolver := resolverForOperationSlot(state, slot, recipientID, eventOrder)
+		if resolver == nil {
+			continue
+		}
+		removeOperationDeckSlot(state, index)
+		recordDealtOperation(state, recipientID, resolver.Definition())
+		return resolver, nil
+	}
+	return nil, ErrNoEligibleOperations
 }
 
 // hiddenAgendaResolvers is the set of envelopes the cover can currently resolve
@@ -498,45 +650,22 @@ func recordDealtOperation(state *GameState, recipientID string, def OperationDef
 }
 
 func randomEligibleOperation(state *GameState, recipientID string, eventOrder int) (OperationResolver, error) {
-	player := state.Players[recipientID]
-	dealtOps := make(map[string]bool, len(player.DealtOperations))
-	for _, op := range player.DealtOperations {
-		dealtOps[op] = true
-	}
-	dealtCats := make(map[int]bool, len(player.DealtCategories))
-	for _, cat := range player.DealtCategories {
-		if cat > 0 {
-			dealtCats[cat] = true
+	if len(state.OperationDeck) == 0 {
+		if err := initOperationDeck(state); err != nil {
+			return nil, err
 		}
 	}
-
-	// Each tier drops one freshness rule, so a short pool degrades to repeating
-	// an operation rather than stalling the round.
-	tiers := []func(OperationDefinition) bool{
-		func(def OperationDefinition) bool {
-			return def.MinEventOrder <= eventOrder && !dealtOps[def.ID] && !(def.Category > 0 && dealtCats[def.Category])
-		},
-		func(def OperationDefinition) bool {
-			return def.MinEventOrder <= eventOrder && !dealtOps[def.ID]
-		},
-		func(OperationDefinition) bool { return true },
-	}
-
-	for _, fresh := range tiers {
-		var eligible []OperationResolver
-		for _, resolver := range operationResolvers {
-			def := resolver.Definition()
-			if dealableOperation(state, def) && fresh(def) {
-				eligible = append(eligible, resolver)
-			}
+	resolver, err := takeOperationFromDeck(state, recipientID, "", eventOrder)
+	if err == ErrNoEligibleOperations && len(state.OperationDeck) > 0 {
+		// This compatibility helper is used by the per-player envelope test. The
+		// real match scheduler assigns the blocked card to another recipient;
+		// this isolated helper may instead start a fresh draw for the same player.
+		if refillErr := initOperationDeck(state); refillErr != nil {
+			return nil, err
 		}
-		if chosen := drawOperation(state, eligible); chosen != nil {
-			recordDealtOperation(state, recipientID, chosen.Definition())
-			return chosen, nil
-		}
+		return takeOperationFromDeck(state, recipientID, "", eventOrder)
 	}
-
-	return nil, ErrNoEligibleOperations
+	return resolver, err
 }
 
 func operationResolverFor(kind string) (OperationResolver, error) {

@@ -264,7 +264,7 @@ export function SettingsScreen({ timerEnabled, setTimerEnabled, projection, live
         <div className="mb-4 flex items-end justify-between gap-3">
           <div>
             <p className="ta-condensed text-xs tracking-[0.16em]">OPERATIONS DECK</p>
-            <p className="ta-condensed text-sm">Every enabled operation can be dealt during a match interlude. Dimmed cards are switched off.</p>
+              <p className="ta-condensed text-sm">Enabled operations are dealt from one shuffled global deck before the deck cycles. Dimmed cards are switched off.</p>
           </div>
           <span className="ta-condensed text-xs tracking-[0.12em]">
             {activeCount} / {deckSize} ACTIVE

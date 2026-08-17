@@ -180,8 +180,16 @@ type GameState struct {
 	DiscussionAcks   map[string]bool        `json:"discussion_acks,omitempty"`
 	ActivePlayerID   string                 `json:"active_player_id,omitempty"`
 	PlannedOperation string                 `json:"planned_operation,omitempty"`
-	// OperationQueue holds the randomized player turn order for the operation round.
-	OperationQueue     []string        `json:"operation_queue,omitempty"`
+	// OperationQueue is the randomized recipient order. It is independent from
+	// OperationDeck so a deck can contain more cards than the table has players.
+	OperationQueue      []string `json:"operation_queue,omitempty"`
+	OperationQueueIndex int      `json:"operation_queue_index,omitempty"`
+	OperationDeck       []string `json:"operation_deck,omitempty"`
+	OperationLastKind   string   `json:"operation_last_kind,omitempty"`
+	OperationDealTarget int      `json:"operation_deal_target,omitempty"`
+	OperationDeals      int      `json:"operation_deals,omitempty"`
+	// OperationsDealt records recipients, not operation IDs. It remains useful
+	// for reconnect/debug history while OperationDeck owns global uniqueness.
 	OperationsDealt    []string        `json:"operations_dealt,omitempty"`
 	Operation          *OperationState `json:"operation,omitempty"`
 	DiscussionDeadline *time.Time      `json:"discussion_deadline,omitempty"`

@@ -33,6 +33,14 @@ func advanceToDiscussion(t *testing.T, state GameState, now time.Time) GameState
 			if resolverErr != nil {
 				t.Fatalf("resolver for %s: %v", operation.Kind, resolverErr)
 			}
+			if operation.Kind == "ChooseVoteShield" && operation.Step == 2 {
+				transition, err := Apply(state, Command{ActorID: operation.InputOwnerID, ExpectedVersion: state.Version, Kind: CommandResolveOperation, Choice: "VOTE_SHIELD"}, now)
+				if err != nil {
+					t.Fatalf("resolve operation %s step 2: %v", operation.Kind, err)
+				}
+				state = transition.State
+				continue
+			}
 			count := resolver.Definition().TargetCount
 			if count == 0 {
 				count = 1
@@ -53,6 +61,199 @@ func advanceToDiscussion(t *testing.T, state GameState, now time.Time) GameState
 	}
 	t.Fatal("operations never reached the final discussion")
 	return state
+}
+
+func operationKindsUntilDiscussion(t *testing.T, state GameState, now time.Time) ([]string, GameState) {
+	t.Helper()
+	kinds := make([]string, 0)
+	lastOperationID := ""
+	for range make([]struct{}, 8*len(state.PlayerOrder)+16) {
+		if state.Operation != nil && state.Operation.ID != lastOperationID && (state.Phase == PhaseOperationInput || state.Phase == PhaseOperationResult) {
+			kinds = append(kinds, state.Operation.Kind)
+			lastOperationID = state.Operation.ID
+		}
+		switch state.Phase {
+		case PhaseDiscussion:
+			return kinds, state
+		case PhaseOperationInterlude:
+			transition, err := Apply(state, Command{ActorID: state.HostID, ExpectedVersion: state.Version, Kind: CommandAdvanceInterlude}, now)
+			if err != nil {
+				t.Fatalf("advance interlude: %v", err)
+			}
+			state = transition.State
+		case PhaseOperationResult:
+			transition, err := Apply(state, Command{ActorID: state.ActivePlayerID, ExpectedVersion: state.Version, Kind: CommandOperationExplainDone}, now)
+			if err != nil {
+				t.Fatalf("explain done: %v", err)
+			}
+			state = transition.State
+		case PhaseOperationInput:
+			operation := state.Operation
+			resolver, resolverErr := operationResolverFor(operation.Kind)
+			if resolverErr != nil {
+				t.Fatalf("resolver for %s: %v", operation.Kind, resolverErr)
+			}
+			if operation.Kind == "ChooseVoteShield" && operation.Step == 2 {
+				transition, err := Apply(state, Command{ActorID: operation.InputOwnerID, ExpectedVersion: state.Version, Kind: CommandResolveOperation, Choice: "VOTE_SHIELD"}, now)
+				if err != nil {
+					t.Fatalf("resolve operation %s step 2: %v", operation.Kind, err)
+				}
+				state = transition.State
+				continue
+			}
+			count := resolver.Definition().TargetCount
+			if count == 0 {
+				count = 1
+			}
+			targets := legalOperationTargets(state, state.ActivePlayerID, count)
+			command := Command{ActorID: state.ActivePlayerID, ExpectedVersion: state.Version, Kind: CommandResolveOperation, TargetIDs: targets[:min(count, len(targets))]}
+			if operation.InputKind == OperationInputChoice {
+				command.Choice = "STAY"
+			}
+			transition, err := Apply(state, command, now)
+			if err != nil {
+				t.Fatalf("resolve operation %s: %v", operation.Kind, err)
+			}
+			state = transition.State
+		default:
+			t.Fatalf("unexpected phase %s while collecting operations", state.Phase)
+		}
+	}
+	t.Fatal("operations never reached the final discussion")
+	return kinds, state
+}
+
+func readyFivePlayerMatch(t *testing.T, settings RoomSettings, now time.Time) GameState {
+	t.Helper()
+	settings.MaxPlayers = 5
+	state := NewLobby("room_test", "p1", "Agent A", settings)
+	for i := 2; i <= 5; i++ {
+		id := string("p" + string(rune('0'+i)))
+		if err := state.AddPlayer(id, "Agent "+string(rune('A'+i-1))); err != nil {
+			t.Fatal(err)
+		}
+	}
+	for _, id := range state.PlayerOrder {
+		transition, err := Apply(state, Command{ActorID: id, ExpectedVersion: state.Version, Kind: CommandSetReady}, now)
+		if err != nil {
+			t.Fatalf("ready %s: %v", id, err)
+		}
+		state = transition.State
+	}
+	transition, err := Apply(state, Command{ActorID: state.HostID, ExpectedVersion: state.Version, Kind: CommandStartMatch}, now)
+	if err != nil {
+		t.Fatalf("start match: %v", err)
+	}
+	state = transition.State
+	for _, id := range state.PlayerOrder {
+		transition, err = Apply(state, Command{ActorID: id, ExpectedVersion: state.Version, Kind: CommandAcknowledgeRole}, now)
+		if err != nil {
+			t.Fatalf("role ack %s: %v", id, err)
+		}
+		state = transition.State
+	}
+	return state
+}
+
+func TestOperationPoolServesEverySlotBeforeRepeating(t *testing.T) {
+	settings := DefaultRoomSettings()
+	settings.EnabledOperations = map[string]bool{
+		"Share":      true,
+		"Detector":   true,
+		"OneRandom":  true,
+		"OneOfTwo":   true,
+		"TwoFriends": true,
+		"Swap":       true,
+	}
+	now := time.Date(2026, 8, 15, 12, 0, 0, 0, time.UTC)
+	state := readyFivePlayerMatch(t, settings, now)
+
+	kinds, finalState := operationKindsUntilDiscussion(t, state, now)
+	if len(kinds) != 6 {
+		t.Fatalf("served operations = %#v, want six deck slots", kinds)
+	}
+	seen := make(map[string]bool, len(kinds))
+	for _, kind := range kinds {
+		if seen[kind] {
+			t.Fatalf("operation %s repeated before the full deck was served: %#v", kind, kinds)
+		}
+		seen[kind] = true
+	}
+	for kind := range settings.EnabledOperations {
+		if !seen[kind] {
+			t.Fatalf("enabled operation %s was never served: %#v", kind, kinds)
+		}
+	}
+	if finalState.Phase != PhaseDiscussion {
+		t.Fatalf("phase = %s, want discussion", finalState.Phase)
+	}
+}
+
+func TestOperationPoolReshufflesOnlyAfterDeckExhaustion(t *testing.T) {
+	settings := DefaultRoomSettings()
+	settings.EnabledOperations = map[string]bool{"Detector": true, "Share": true}
+	now := time.Date(2026, 8, 15, 12, 0, 0, 0, time.UTC)
+	state := readyFivePlayerMatch(t, settings, now)
+
+	kinds, _ := operationKindsUntilDiscussion(t, state, now)
+	if len(kinds) != len(state.PlayerOrder) {
+		t.Fatalf("served operations = %#v, want one turn per player", kinds)
+	}
+	if kinds[0] == kinds[1] {
+		t.Fatalf("operation repeated before the two-card deck was exhausted: %#v", kinds)
+	}
+	for _, kind := range kinds {
+		if kind != "Detector" && kind != "Share" {
+			t.Fatalf("unexpected operation %s in %#v", kind, kinds)
+		}
+	}
+}
+
+func TestOperationPoolDoesNotDealFutureEventOperationFirst(t *testing.T) {
+	settings := DefaultRoomSettings()
+	settings.EnabledOperations = map[string]bool{"ChooseVoteShield": true}
+	now := time.Date(2026, 8, 15, 12, 0, 0, 0, time.UTC)
+	settings.MaxPlayers = 5
+	state := NewLobby("room_test", "p1", "Agent A", settings)
+	for i := 2; i <= 5; i++ {
+		id := string("p" + string(rune('0'+i)))
+		if err := state.AddPlayer(id, "Agent "+string(rune('A'+i-1))); err != nil {
+			t.Fatal(err)
+		}
+	}
+	for _, id := range state.PlayerOrder {
+		transition, err := Apply(state, Command{ActorID: id, ExpectedVersion: state.Version, Kind: CommandSetReady}, now)
+		if err != nil {
+			t.Fatalf("ready %s: %v", id, err)
+		}
+		state = transition.State
+	}
+	if _, err := Apply(state, Command{ActorID: state.HostID, ExpectedVersion: state.Version, Kind: CommandStartMatch}, now); err != ErrNoEligibleOperations {
+		t.Fatalf("future-only operation start err = %v, want %v", err, ErrNoEligibleOperations)
+	}
+}
+
+func TestOperationPoolReleasesFutureEventOperationAfterItsGate(t *testing.T) {
+	settings := DefaultRoomSettings()
+	settings.EnabledOperations = map[string]bool{"Detector": true, "ChooseVoteShield": true}
+	now := time.Date(2026, 8, 15, 12, 0, 0, 0, time.UTC)
+	state := readyFivePlayerMatch(t, settings, now)
+	kinds, _ := operationKindsUntilDiscussion(t, state, now)
+	if len(kinds) != len(state.PlayerOrder) {
+		t.Fatalf("served operations = %#v, want one turn per player", kinds)
+	}
+	if kinds[0] == "ChooseVoteShield" {
+		t.Fatalf("future-event operation was served first: %#v", kinds)
+	}
+	seenFuture := false
+	for _, kind := range kinds {
+		if kind == "ChooseVoteShield" {
+			seenFuture = true
+		}
+	}
+	if !seenFuture {
+		t.Fatalf("future-event operation was never released: %#v", kinds)
+	}
 }
 
 func TestAnonymousTipFlowAndVoteResolution(t *testing.T) {
@@ -200,6 +401,9 @@ func TestHostControlsOperationPoolAndStartRandomizesFromIt(t *testing.T) {
 		}
 		state = transition.State
 	}
+	if _, err = Apply(state, Command{ActorID: state.HostID, ExpectedVersion: state.Version, Kind: CommandStartMatch, OperationKind: "Swap"}, now); err != ErrNotAllowed {
+		t.Fatalf("disabled requested operation err = %v, want %v", err, ErrNotAllowed)
+	}
 	transition, err = Apply(state, Command{ActorID: state.HostID, ExpectedVersion: state.Version, Kind: CommandStartMatch, OperationKind: "Detector"}, now)
 	if err != nil {
 		t.Fatal(err)
@@ -325,6 +529,9 @@ func TestDefaultSettingsExposeOnlyVerifiedLiveOperations(t *testing.T) {
 func TestEveryOperationResolverCanExecuteItsDeclaredContract(t *testing.T) {
 	for _, definition := range OperationDefinitions() {
 		definition := definition
+		if definition.MinEventOrder > 1 {
+			continue
+		}
 		t.Run(definition.ID, func(t *testing.T) {
 			settings := DefaultRoomSettings()
 			settings.MaxPlayers = 5
@@ -390,6 +597,9 @@ func TestEnabledOperationDefinitionsCanResolveThroughTheGenericInputContract(t *
 	now := time.Date(2026, 8, 15, 12, 0, 0, 0, time.UTC)
 	for _, definition := range OperationDefinitions() {
 		if !definition.Enabled || !IsLiveOperation(definition.ID) {
+			continue
+		}
+		if definition.MinEventOrder > 1 {
 			continue
 		}
 		t.Run(definition.ID, func(t *testing.T) {

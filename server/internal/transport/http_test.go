@@ -329,6 +329,7 @@ func TestFivePlayerWebSocketMatchAndRematch(t *testing.T) {
 		clients[index] = players[index].connection
 	}
 
+	projection = sendCommandAndCollect(t, clients, 0, projection.Public.Version, domain.CommandSetOperationEnabled, "enable-swap", nil, map[string]any{"operation_kind": "Swap", "operation_enabled": true})
 	for index := range clients {
 		projection = sendCommandAndCollect(t, clients, index, projection.Public.Version, domain.CommandSetReady, "ready-"+string(rune('a'+index)), nil, nil)
 	}
