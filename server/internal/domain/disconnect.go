@@ -5,9 +5,8 @@ import (
 	"time"
 )
 
-// ApplyLeave removes a player from an unstarted lobby. Explicitly leaving is
-// different from disconnecting: the player loses their seat and reconnect
-// credential, so they must join again to return.
+// ApplyLeave removes a player from an unstarted lobby. The player loses their
+// seat and reconnect credential, so they must join again to return.
 func ApplyLeave(state GameState, playerID string, now time.Time) (Transition, error) {
 	if state.Phase != PhaseLobby {
 		return Transition{}, ErrNotAllowed
@@ -57,25 +56,25 @@ func removeSeat(state GameState, playerID string) GameState {
 }
 
 // ApplyDisconnect applies the server's absence policy. A disconnected player
-// keeps their seat and reconnect credential, so a reload or short network loss
-// can restore them to the current game. They no longer block role
-// acknowledgements or voting; if they own an unfinished private step, that step
-// is skipped without exposing a private result.
+// keeps their seat and reconnect credential once a match has started, so a
+// reload or short network loss can restore them to the current game. Lobby
+// disconnects are different: the seat is released immediately, and returning
+// players must join again as a new seat. In-game absences no longer block role
+// acknowledgements or voting; if they own an unfinished private step, that
+// step is skipped without exposing a private result.
 func ApplyDisconnect(state GameState, playerID string, now time.Time) (Transition, error) {
 	player, ok := state.Players[playerID]
 	if !ok {
 		return Transition{}, fmt.Errorf("player %s is not in room", playerID)
 	}
+	if state.Phase == PhaseLobby {
+		state = removeSeat(state, playerID)
+		return commit(state, "PLAYER_LEFT", player.Name+" left the lobby", now), nil
+	}
 	if !player.Connected && state.HostID != playerID {
 		return Transition{State: state}, nil
 	}
 	player.Connected = false
-	// A lobby player must explicitly confirm they are still ready after
-	// reconnecting. Otherwise a brief disconnect could allow the host to start
-	// a match with an absent, previously-ready player.
-	if state.Phase == PhaseLobby {
-		player.Ready = false
-	}
 	state.Players[playerID] = player
 	hostTransferred := false
 	if state.HostID == playerID {

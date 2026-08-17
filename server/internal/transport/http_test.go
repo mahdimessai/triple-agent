@@ -76,9 +76,10 @@ func TestCreateLobbyAndWebSocketProjection(t *testing.T) {
 		t.Fatalf("ack = %#v", ack)
 	}
 
-	// A browser reload in the lobby keeps the seat and returns the current
-	// projection, including changes made before the connection closed.
+	// A browser close in the lobby releases the seat immediately, so the old
+	// reconnect credential is terminal rather than reserving that seat.
 	_ = connection.Close()
+	time.Sleep(50 * time.Millisecond)
 	reconnected, _, err := websocket.DefaultDialer.Dial(wsURL, nil)
 	if err != nil {
 		t.Fatal(err)
@@ -90,9 +91,12 @@ func TestCreateLobbyAndWebSocketProjection(t *testing.T) {
 	if err := reconnected.SetReadDeadline(time.Now().Add(2 * time.Second)); err != nil {
 		t.Fatal(err)
 	}
-	reconnectedProjection := authenticateConnection(t, reconnected, lobbyResponse.ReconnectToken)
-	if reconnectedProjection.Public.Version <= projection.Public.Version || reconnectedProjection.Public.Players[0].Ready || !reconnectedProjection.Public.Players[0].Connected {
-		t.Fatalf("reconnected lobby projection = %#v, want the post-disconnect state", reconnectedProjection)
+	var rejected map[string]any
+	if err := reconnected.ReadJSON(&rejected); err != nil {
+		t.Fatal(err)
+	}
+	if rejected["type"] != "session.error" || rejected["status"] != float64(http.StatusUnauthorized) {
+		t.Fatalf("released lobby reconnect response = %#v, want unauthorized", rejected)
 	}
 }
 
@@ -329,6 +333,7 @@ func TestFivePlayerWebSocketMatchAndRematch(t *testing.T) {
 		clients[index] = players[index].connection
 	}
 
+	projection = sendCommandAndCollect(t, clients, 0, projection.Public.Version, domain.CommandSetOperationEnabled, "enable-swap", nil, map[string]any{"operation_kind": "Swap", "operation_enabled": true})
 	for index := range clients {
 		projection = sendCommandAndCollect(t, clients, index, projection.Public.Version, domain.CommandSetReady, "ready-"+string(rune('a'+index)), nil, nil)
 	}

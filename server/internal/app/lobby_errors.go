@@ -75,6 +75,11 @@ func wrapSessionError(err error) error {
 			ftag.With(ftag.Unauthenticated),
 			fmsg.WithDesc("invalid reconnect token", "Invalid reconnect token."),
 		)
+	case errors.Is(err, domain.ErrPlayerNotInRoom):
+		return fault.Wrap(err,
+			ftag.With(ftag.Unauthenticated),
+			fmsg.WithDesc("player is no longer in room", "This player is no longer seated in the room."),
+		)
 	default:
 		return fault.Wrap(err, ftag.With(ftag.Internal), fmsg.With("room authentication unavailable"))
 	}

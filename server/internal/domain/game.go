@@ -46,6 +46,8 @@ const (
 	CommandSetRoleEnabled        CommandKind = "lobby.role_enabled"
 	CommandSetDiscussionTimer    CommandKind = "lobby.discussion_timer"
 	CommandSetVirusCount         CommandKind = "lobby.virus_count"
+	CommandTransferHost          CommandKind = "lobby.transfer_host"
+	CommandKickPlayer            CommandKind = "lobby.kick_player"
 )
 
 type Faction string
@@ -180,8 +182,16 @@ type GameState struct {
 	DiscussionAcks   map[string]bool        `json:"discussion_acks,omitempty"`
 	ActivePlayerID   string                 `json:"active_player_id,omitempty"`
 	PlannedOperation string                 `json:"planned_operation,omitempty"`
-	// OperationQueue holds the randomized player turn order for the operation round.
-	OperationQueue     []string        `json:"operation_queue,omitempty"`
+	// OperationQueue is the randomized recipient order. It is independent from
+	// OperationDeck so a deck can contain more cards than the table has players.
+	OperationQueue      []string `json:"operation_queue,omitempty"`
+	OperationQueueIndex int      `json:"operation_queue_index,omitempty"`
+	OperationDeck       []string `json:"operation_deck,omitempty"`
+	OperationLastKind   string   `json:"operation_last_kind,omitempty"`
+	OperationDealTarget int      `json:"operation_deal_target,omitempty"`
+	OperationDeals      int      `json:"operation_deals,omitempty"`
+	// OperationsDealt records recipients, not operation IDs. It remains useful
+	// for reconnect/debug history while OperationDeck owns global uniqueness.
 	OperationsDealt    []string        `json:"operations_dealt,omitempty"`
 	Operation          *OperationState `json:"operation,omitempty"`
 	DiscussionDeadline *time.Time      `json:"discussion_deadline,omitempty"`
@@ -223,6 +233,7 @@ var (
 	ErrNoEligibleOperations = errors.New("no eligible operations are enabled")
 	ErrAlreadySubmitted     = errors.New("command already submitted")
 	ErrRoomFull             = errors.New("room is full")
+	ErrPlayerNotInRoom      = errors.New("player is not in room")
 )
 
 func NewLobby(roomID, hostID string, hostName string, settings RoomSettings) GameState {

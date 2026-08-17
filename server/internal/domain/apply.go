@@ -16,6 +16,34 @@ func Apply(state GameState, command Command, now time.Time) (Transition, error) 
 	}
 
 	switch command.Kind {
+	case CommandTransferHost:
+		if state.Phase != PhaseLobby || command.ActorID != state.HostID {
+			return Transition{}, ErrNotAllowed
+		}
+		if command.TargetID == state.HostID {
+			return Transition{State: state}, nil
+		}
+		target, exists := state.Players[command.TargetID]
+		if !exists {
+			return Transition{}, ErrInvalidTarget
+		}
+		state.HostID = command.TargetID
+		return commit(state, "HOST_TRANSFERRED", player.Name+" transferred host to "+target.Name, now), nil
+
+	case CommandKickPlayer:
+		if state.Phase != PhaseLobby || command.ActorID != state.HostID {
+			return Transition{}, ErrNotAllowed
+		}
+		if command.TargetID == state.HostID {
+			return Transition{}, ErrNotAllowed
+		}
+		target, exists := state.Players[command.TargetID]
+		if !exists {
+			return Transition{}, ErrInvalidTarget
+		}
+		state = removeSeat(state, command.TargetID)
+		return commit(state, "PLAYER_KICKED", player.Name+" kicked "+target.Name+" from the lobby", now), nil
+
 	case CommandRematch:
 		if (!isResultsPhase(state.Phase) && state.Phase != PhaseEnd) || command.ActorID != state.HostID {
 			return Transition{}, ErrNotAllowed
@@ -228,21 +256,23 @@ func Apply(state GameState, command Command, now time.Time) (Transition, error) 
 			return Transition{}, ErrNotAllowed
 		}
 		state.DiscussionDeadline = nil
-		if next := nextOperationRecipient(state); next != "" {
-			eventOrder := len(state.OperationsDealt) + 1
-			resolver, resolverErr := randomEligibleOperation(&state, next, eventOrder)
-			if resolverErr != nil {
-				return Transition{}, resolverErr
+		if state.OperationDeals < state.OperationDealTarget {
+			if next := nextOperationRecipient(&state); next != "" {
+				eventOrder := state.OperationDeals + 1
+				resolver, resolverErr := takeOperationFromDeck(&state, next, "", eventOrder)
+				if resolverErr != nil {
+					return Transition{}, resolverErr
+				}
+				state.ActivePlayerID = next
+				state.PlannedOperation = resolver.Definition().ID
+				if err := beginPlannedOperation(&state); err != nil {
+					return Transition{}, err
+				}
+				return commit(state, "OPERATION_DEALT", state.Players[next].Name+" received an operation", now), nil
 			}
-			state.ActivePlayerID = next
-			state.PlannedOperation = resolver.Definition().ID
-			if err := beginPlannedOperation(&state); err != nil {
-				return Transition{}, err
-			}
-			return commit(state, "OPERATION_DEALT", state.Players[next].Name+" received an operation", now), nil
 		}
-		// Everyone has had a turn, so the room gets its full discussion before
-		// the accusation.
+		// The configured deck has been served, and any extra player turns have
+		// only used cards from a reshuffled cycle.
 		state.Phase = PhaseDiscussion
 		state.ActivePlayerID = ""
 		state.DiscussionAcks = make(map[string]bool, len(state.PlayerOrder))

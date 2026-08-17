@@ -43,6 +43,44 @@ func TestStaleDetachCannotDisconnectReplacementSession(t *testing.T) {
 	}
 }
 
+func TestReconnectDoesNotReclaimTransferredHost(t *testing.T) {
+	state := domain.NewLobby("room_reconnect_host", "host", "Host", domain.DefaultRoomSettings())
+	if err := state.AddPlayer("player", "Player"); err != nil {
+		t.Fatal(err)
+	}
+	state.Players["host"] = domain.PlayerState{ID: "host", Name: "Host", Seat: 1, Connected: true, CanVote: true, VotingPower: 1}
+	state.Players["player"] = domain.PlayerState{ID: "player", Name: "Player", Seat: 2, Connected: true, CanVote: true, VotingPower: 1}
+	state.Phase = domain.PhaseDiscussion
+
+	active := newRoom(state, time.Hour, time.Hour, nil)
+	defer active.Close()
+	if err := active.Attach("host", "host-session", func(domain.Projection) error { return nil }, func() {}); err != nil {
+		t.Fatal(err)
+	}
+	if err := active.Attach("player", "player-session", func(domain.Projection) error { return nil }, func() {}); err != nil {
+		t.Fatal(err)
+	}
+	active.Detach("host", "host-session")
+
+	transferred, err := active.Snapshot("player")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if transferred.Public.HostID != "player" {
+		t.Fatalf("host after disconnect = %q, want player", transferred.Public.HostID)
+	}
+	if err := active.Attach("host", "host-reconnected", func(domain.Projection) error { return nil }, func() {}); err != nil {
+		t.Fatal(err)
+	}
+	reconnected, err := active.Snapshot("host")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if reconnected.Public.HostID != "player" {
+		t.Fatalf("host after reconnect = %q, want transferred player", reconnected.Public.HostID)
+	}
+}
+
 func TestFailedProjectionDeliveryAppliesDisconnectPolicy(t *testing.T) {
 	state := domain.NewLobby("room", "host", "Host", domain.DefaultRoomSettings())
 	if err := state.AddPlayer("player", "Player"); err != nil {

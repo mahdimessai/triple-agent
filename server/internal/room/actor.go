@@ -137,7 +137,7 @@ func (r *Room) loop(state domain.GameState) {
 
 			case "snapshot":
 				if _, ok := state.Players[message.playerID]; !ok {
-					message.reply <- roomResponse{err: errors.New("player is not in room")}
+					message.reply <- roomResponse{err: domain.ErrPlayerNotInRoom}
 					continue
 				}
 				message.reply <- roomResponse{reply: roomReply{projection: domain.Project(state, message.playerID)}}
@@ -185,6 +185,14 @@ func (r *Room) loop(state domain.GameState) {
 				if command.Kind == domain.CommandRematch {
 					dedupe = make(map[string]dedupeEntry)
 					dedupeOrder = dedupeOrder[:0]
+				}
+				for playerID, session := range sessions {
+					if _, exists := state.Players[playerID]; !exists {
+						delete(sessions, playerID)
+						if session.close != nil {
+							session.close()
+						}
+					}
 				}
 				projection := domain.Project(state, command.ActorID)
 				if command.RequestID != "" {

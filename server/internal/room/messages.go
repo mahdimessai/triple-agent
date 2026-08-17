@@ -81,7 +81,8 @@ func (r *Room) Attach(playerID string, sessionID string, sender Sender, close Cl
 	return err
 }
 
-// Detach releases a session while preserving the player's seat for reconnect.
+// Detach releases a session. In an active match the player's seat remains
+// available for reconnect; in a lobby the actor releases it immediately.
 func (r *Room) Detach(playerID string, sessionID string) {
 	reply := make(chan roomResponse, 1)
 	if !r.send(roomMessage{kind: "detach", playerID: playerID, sessionID: sessionID, reply: reply}) {

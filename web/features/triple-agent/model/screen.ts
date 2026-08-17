@@ -65,6 +65,8 @@ export function clientCommandFromLegacy(kind: ClientCommand["kind"], payload: Co
     };
     case "lobby.virus_count": return { kind, virus_count: payload.virusCount ?? 0 };
     case "lobby.role_enabled": return { kind, role_id: payload.roleId ?? "", role_enabled: payload.roleEnabled ?? false };
+    case "lobby.transfer_host": return { kind, target_id: payload.targetId ?? "" };
+    case "lobby.kick_player": return { kind, target_id: payload.targetId ?? "" };
   }
 }
 

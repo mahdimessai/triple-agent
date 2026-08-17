@@ -66,11 +66,39 @@ func TestLyingRolesAlsoRewriteTheStartingAgency(t *testing.T) {
 		t.Fatal("a lying role changed the real starting agency")
 	}
 
-	// A Deep Cover Agent and a plain VIRUS agent really did start together, but
-	// the photographs must report them as opposites.
+	// The photograph record uses the same apparent starting agency as every
+	// other check, so a matching apparent pair can be shown together.
+	setRole(&state, "p3", RoleNormalBlue, FactionService)
+	if checkInitialFaction(state.Players["p1"]) != checkInitialFaction(state.Players["p3"]) {
+		t.Fatal("old photographs failed to pair players with the same visible starting agency")
+	}
+}
+
+func TestOldPhotographsAlwaysSelectsTwoPlayersFromOneStartingAgency(t *testing.T) {
+	state := lobbyWithPlayers(t, 5)
+	setRole(&state, "p1", RoleNormalBlue, FactionService)
+	setRole(&state, "p2", RoleNormalRed, FactionVirus)
 	setRole(&state, "p3", RoleNormalRed, FactionVirus)
-	if checkInitialFaction(state.Players["p1"]) == checkInitialFaction(state.Players["p3"]) {
-		t.Fatal("old photographs paired a deep cover agent with their real starting side")
+	setRole(&state, "p4", RoleNormalBlue, FactionService)
+	setRole(&state, "p5", RoleNormalBlue, FactionService)
+	state.ActivePlayerID = "p1"
+
+	for seed := uint64(1); seed <= 40; seed++ {
+		state.RandomState = seed
+		state.Operation = newOperationState(&state, twoFriendsResolver{}.Definition())
+		if err := (twoFriendsResolver{}).Resolve(&state, Command{}); err != nil {
+			t.Fatal(err)
+		}
+		result := state.Operation.PrivateResults[state.ActivePlayerID]
+		if result.Code != "SAME_INITIAL_AGENCY" {
+			t.Fatalf("seed %d result code = %q, want SAME_INITIAL_AGENCY", seed, result.Code)
+		}
+		if len(result.TargetPlayerIDs) != 2 || result.TargetPlayerIDs[0] == state.ActivePlayerID || result.TargetPlayerIDs[1] == state.ActivePlayerID {
+			t.Fatalf("seed %d targets = %#v, want two other players", seed, result.TargetPlayerIDs)
+		}
+		if checkInitialFaction(state.Players[result.TargetPlayerIDs[0]]) != checkInitialFaction(state.Players[result.TargetPlayerIDs[1]]) {
+			t.Fatalf("seed %d targets have different starting agencies: %#v", seed, result.TargetPlayerIDs)
+		}
 	}
 }
 

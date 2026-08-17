@@ -338,8 +338,8 @@ func (twoFriendsResolver) Definition() OperationDefinition {
 		MinPlayers:         5,
 		MinEventOrder:      1,
 		Enabled:            true,
-		PublicInstruction:  "The active player received evidence about two starting agencies.",
-		PrivateInstruction: "The server selected two names and compared their starting agencies.",
+		PublicInstruction:  "The active player received evidence about two players who worked for the same agency at the start.",
+		PrivateInstruction: "The server selected two names who worked for the same agency at the start.",
 	}
 }
 
@@ -352,15 +352,11 @@ func (twoFriendsResolver) Resolve(state *GameState, _ Command) error {
 	if _, ok := state.Players[activeID]; !ok {
 		return ErrInvalidTarget
 	}
-	pair := chooseRandomOthers(state, activeID, 2)
+	pair := chooseRandomSameInitialAgencyPair(state, activeID)
 	if len(pair) != 2 {
 		return ErrInvalidTarget
 	}
-	code := "DIFFERENT_INITIAL_AGENCY"
-	if checkInitialFaction(state.Players[pair[0]]) == checkInitialFaction(state.Players[pair[1]]) {
-		code = "SAME_INITIAL_AGENCY"
-	}
-	state.Operation.PrivateResults = map[string]OperationResult{activeID: {Code: code, TargetPlayerIDs: append([]string(nil), pair...), Message: "The photographs compare the two agents' starting agencies."}}
+	state.Operation.PrivateResults = map[string]OperationResult{activeID: {Code: "SAME_INITIAL_AGENCY", TargetPlayerIDs: append([]string(nil), pair...), Message: "The photographs show two agents who worked for the same agency at the start."}}
 	return nil
 }
 

@@ -28,14 +28,9 @@ func (r *Room) handleAttach(state *domain.GameState, sessions map[string]roomSes
 	}
 	player.Connected = true
 	state.Players[message.playerID] = player
-	// A reload looks like a disconnect, so the host badge has usually already
-	// moved on. The player who created the room takes it back when they return;
-	// anyone else only inherits it while the current host is away.
-	if state.HostID != message.playerID {
-		if state.OwnerID == message.playerID || !state.Players[state.HostID].Connected {
-			state.HostID = message.playerID
-		}
-	}
+	// Reconnecting only restores presence. Host transfer is decided when the
+	// player disconnects, so a returning player never reclaims a role that has
+	// already moved to someone else.
 	sessions[message.playerID] = roomSession{id: message.sessionID, sender: message.sender, close: message.close}
 	if err := message.sender(domain.Project(*state, message.playerID)); err != nil {
 		delete(sessions, message.playerID)
