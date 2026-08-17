@@ -80,6 +80,55 @@ func TestJoinLobbyFailsWhenRoomIsFull(t *testing.T) {
 	}
 }
 
+func TestJoinLobbyDuplicateNameFails(t *testing.T) {
+	store := admission.NewStore()
+	rooms := room.NewManager()
+	lobbies := NewLobbies(store, rooms)
+	created, err := lobbies.Create(CreateInput{PlayerName: "Host"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { rooms.Remove(created.RoomID) })
+
+	// Exact duplicate of host name fails
+	_, err = lobbies.Join(JoinInput{
+		JoinCode:   created.JoinCode,
+		PlayerName: "Host",
+	})
+	if !errors.Is(err, domain.ErrPlayerNameTaken) {
+		t.Fatalf("join duplicate error = %v, want %v", err, domain.ErrPlayerNameTaken)
+	}
+
+	// Case-insensitive / whitespace-padded duplicate fails
+	_, err = lobbies.Join(JoinInput{
+		JoinCode:   created.JoinCode,
+		PlayerName: "  host  ",
+	})
+	if !errors.Is(err, domain.ErrPlayerNameTaken) {
+		t.Fatalf("join case-insensitive duplicate error = %v, want %v", err, domain.ErrPlayerNameTaken)
+	}
+
+	// Valid unique name succeeds
+	joined, err := lobbies.Join(JoinInput{
+		JoinCode:   created.JoinCode,
+		PlayerName: "Player 2",
+	})
+	if err != nil {
+		t.Fatalf("joining with unique name: %v", err)
+	}
+
+	// Duplicate of second player fails
+	_, err = lobbies.Join(JoinInput{
+		JoinCode:   created.JoinCode,
+		PlayerName: "PLAYER 2",
+	})
+	if !errors.Is(err, domain.ErrPlayerNameTaken) {
+		t.Fatalf("join second player duplicate error = %v, want %v", err, domain.ErrPlayerNameTaken)
+	}
+
+	_ = joined
+}
+
 func TestLobbySocketCloseReleasesSeatAndCannotReconnect(t *testing.T) {
 	store := admission.NewStore()
 	rooms := room.NewManager()

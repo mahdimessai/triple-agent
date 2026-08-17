@@ -125,26 +125,38 @@ export function ResultsScreen({ projection, loading = false, onRestart }: { proj
         <div className="ta-rise grid gap-4">
           <div className="ta-paper p-5 text-center">
             <p className="ta-condensed text-xs tracking-[0.2em] text-black/60">FINAL OUTCOME</p>
-            <h2 className={`ta-display mt-1 text-3xl sm:text-4xl ${winner === "VIRUS" ? "text-ta-red" : winner === "SERVICE" ? "text-[#1d5b79]" : "text-black"}`}>
-              {winner === "VIRUS" ? "VIRUS WINS" : winner === "SERVICE" ? "THE SERVICE WINS" : "DRAW"}
-            </h2>
-            <p className="ta-condensed mt-2 text-sm text-black/65">
-              {winner === "VIRUS"
-                ? "A Service agent was imprisoned or the virus network stayed hidden."
-                : winner === "SERVICE"
-                  ? "The Service successfully identified and imprisoned a VIRUS operative."
-                  : "The match ended in a draw."}
-            </p>
+            {winner === "NONE" ? (
+              <>
+                <h2 className="ta-display mt-1 text-3xl sm:text-4xl text-ta-red">
+                  OPERATION: SCAPEGOAT SUCCEEDED
+                </h2>
+                <p className="ta-condensed mt-2 text-sm text-black/65">
+                  {projection?.public.activity ?? "The Scapegoat was imprisoned — both agencies lose!"}
+                </p>
+              </>
+            ) : (
+              <>
+                <h2 className={`ta-display mt-1 text-3xl sm:text-4xl ${winner === "VIRUS" ? "text-ta-red" : "text-[#1d5b79]"}`}>
+                  {winner === "VIRUS" ? "VIRUS WINS" : "THE SERVICE WINS"}
+                </h2>
+                <p className="ta-condensed mt-2 text-sm text-black/65">
+                  {winner === "VIRUS"
+                    ? "A Service agent was imprisoned or the virus network stayed hidden."
+                    : "The Service successfully identified and imprisoned a VIRUS operative."}
+                </p>
+              </>
+            )}
           </div>
 
           <div className="ta-paper p-4">
             <div className="flex items-center justify-between border-b-2 border-black/20 pb-3">
               <span className="ta-condensed text-xs tracking-[0.16em]">PARTICIPATING PLAYERS</span>
-              <span className="ta-condensed text-xs tracking-[0.16em]">ORGANIZATION</span>
+              <span className="ta-condensed text-xs tracking-[0.16em]">OUTCOME & ROSTER</span>
             </div>
-            <div className="mt-3 grid gap-2">
+            <div className="mt-3 grid gap-3">
               {rosterEntries.map((player) => {
                 const isVirus = player.faction === "VIRUS";
+                const isWinner = player.result === "WINNER";
                 const isImprisoned = player.player_id === imprisoned?.id || player.name === imprisoned?.name;
                 const specialRole = player.role ? getRole(player.role) : undefined;
                 const defectorArtName = player.defection === "BLUE_DEFECTOR"
@@ -152,49 +164,96 @@ export function ResultsScreen({ projection, loading = false, onRestart }: { proj
                   : player.defection === "RED_DEFECTOR"
                     ? "defectorRed"
                     : undefined;
+
+                const hiddenAgendaArtName = player.objective_kind === "IMPRISON_SELF"
+                  ? "strain"
+                  : player.objective_kind === "IMPRISON_TARGET"
+                    ? "grudge"
+                    : player.objective_kind === "TARGET_WINS"
+                      ? "infatuation"
+                      : undefined;
+
                 return (
-                  <div className="flex items-center justify-between gap-3 border-t-2 border-black/15 pt-2" key={player.player_id}>
-                    <div className="flex min-w-0 items-center gap-3">
-                      <ArtStamp
-                        artName={isVirus ? "virusLogo" : "serviceLogo"}
-                        alt={`${player.faction} logo`}
-                        className="h-8 w-8 shrink-0 object-contain"
-                      />
-                      <div className="min-w-0">
-                        <span className="ta-condensed truncate text-lg font-bold">{player.name}</span>
-                        {isImprisoned ? (
-                          <span className="ta-condensed ml-2 rounded bg-black px-1.5 py-0.5 text-[0.65rem] tracking-[0.12em] text-white">
-                            IMPRISONED
+                  <div className="border-t-2 border-black/15 pt-3" key={player.player_id}>
+                    <div className="flex items-center justify-between gap-3">
+                      <div className="flex min-w-0 items-center gap-3">
+                        <ArtStamp
+                          artName={isVirus ? "virusLogo" : "serviceLogo"}
+                          alt={`${player.faction} logo`}
+                          className="h-8 w-8 shrink-0 object-contain"
+                        />
+                        <div className="min-w-0">
+                          <div className="flex items-center gap-2 flex-wrap">
+                            <span className="ta-condensed truncate text-lg font-bold">{player.name}</span>
+                            <span
+                              className={`ta-condensed rounded px-1.5 py-0.5 text-[0.68rem] font-bold tracking-[0.12em] ${
+                                isWinner
+                                  ? "bg-[#224c51] text-ta-paper border border-black/30"
+                                  : "bg-black/10 text-black/60 border border-black/15"
+                              }`}
+                            >
+                              {player.result}
+                            </span>
+                            {isImprisoned ? (
+                              <span className="ta-condensed rounded bg-ta-red px-1.5 py-0.5 text-[0.65rem] tracking-[0.12em] text-white">
+                                IMPRISONED
+                              </span>
+                            ) : null}
+                          </div>
+                        </div>
+                      </div>
+                      <div className="flex shrink-0 items-center gap-2">
+                        <span className={`ta-condensed text-xs font-bold tracking-[0.12em] ${isVirus ? "text-ta-red" : "text-[#1d5b79]"}`}>
+                          {player.faction}
+                        </span>
+                        {specialRole ? (
+                          <span
+                            aria-label={`${specialRole.name} role`}
+                            className="inline-flex h-8 w-7 items-center justify-center border border-black/15 bg-black/5"
+                            title={specialRole.name}
+                          >
+                            <ArtStamp artName={specialRole.artName} alt={`${specialRole.name} role`} className="h-7 w-auto object-contain" />
                           </span>
                         ) : null}
+                        {hiddenAgendaArtName ? (
+                          <span
+                            aria-label={player.objective_description ?? "Hidden Agenda"}
+                            className="inline-flex h-8 w-7 items-center justify-center border border-black/15 bg-black/5"
+                            title={player.objective_description ?? "Hidden Agenda"}
+                          >
+                            <ArtStamp artName={hiddenAgendaArtName} alt="Hidden Agenda" className="h-7 w-auto object-contain" />
+                          </span>
+                        ) : null}
+                        {defectorArtName ? (
+                          <span
+                            aria-label={player.defection === "BLUE_DEFECTOR" ? "Blue defector" : "Red defector"}
+                            className="inline-flex h-8 w-7 items-center justify-center border border-black/15 bg-black/5"
+                            title={player.defection === "BLUE_DEFECTOR" ? "Blue defector" : "Red defector"}
+                          >
+                            <ArtStamp artName={defectorArtName} alt={player.defection === "BLUE_DEFECTOR" ? "Blue defector" : "Red defector"} className="h-7 w-auto object-contain" />
+                          </span>
+                        ) : null}
+                        <span className="ta-condensed text-xs text-black/50">
+                          · {player.votes} {player.votes === 1 ? "VOTE" : "VOTES"}
+                        </span>
                       </div>
                     </div>
-                    <div className="flex shrink-0 items-center gap-2">
-                      <span className={`ta-condensed text-xs font-bold tracking-[0.12em] ${isVirus ? "text-ta-red" : "text-[#1d5b79]"}`}>
-                        {player.faction}
-                      </span>
-                      {specialRole ? (
-                        <span
-                          aria-label={`${specialRole.name} role`}
-                          className="inline-flex h-8 w-7 items-center justify-center border border-black/15 bg-black/5"
-                          title={specialRole.name}
-                        >
-                          <ArtStamp artName={specialRole.artName} alt={`${specialRole.name} role`} className="h-7 w-auto object-contain" />
-                        </span>
-                      ) : null}
-                      {defectorArtName ? (
-                        <span
-                          aria-label={player.defection === "BLUE_DEFECTOR" ? "Blue defector" : "Red defector"}
-                          className="inline-flex h-8 w-7 items-center justify-center border border-black/15 bg-black/5"
-                          title={player.defection === "BLUE_DEFECTOR" ? "Blue defector" : "Red defector"}
-                        >
-                          <ArtStamp artName={defectorArtName} alt={player.defection === "BLUE_DEFECTOR" ? "Blue defector" : "Red defector"} className="h-7 w-auto object-contain" />
-                        </span>
-                      ) : null}
-                      <span className="ta-condensed text-xs text-black/50">
-                        · {player.votes} {player.votes === 1 ? "VOTE" : "VOTES"}
-                      </span>
-                    </div>
+
+                    {/* Objective and Win Condition Outcome */}
+                    {player.objective_description || player.win_reason ? (
+                      <div className="mt-1.5 ml-11 flex flex-col gap-0.5 text-xs text-black/75">
+                        {player.objective_description ? (
+                          <p className="ta-condensed leading-snug">
+                            <span className="font-semibold text-black/90">Objective:</span> {player.objective_description}
+                          </p>
+                        ) : null}
+                        {player.win_reason ? (
+                          <p className={`ta-condensed leading-snug font-medium ${isWinner ? "text-[#1d5b79]" : "text-black/60"}`}>
+                            {player.win_reason}
+                          </p>
+                        ) : null}
+                      </div>
+                    ) : null}
                   </div>
                 );
               })}

@@ -138,7 +138,7 @@ export function useRoomSession({ screen, onScreenChange }: UseRoomSessionOptions
       setKickedFromLobby(true);
     }
     leavingRef.current = false;
-    onScreenChange("join");
+    onScreenChange("title");
   }
 
   function dismissKickedPopup() {
@@ -318,7 +318,7 @@ export function useRoomSession({ screen, onScreenChange }: UseRoomSessionOptions
       setProjection(undefined);
       setRoomCode(currentSession.join_code);
       setError(undefined);
-      onScreenChange("join");
+      onScreenChange("title");
     } catch (cause) {
       leavingRef.current = false;
       setError(cause instanceof Error ? cause.message : "Could not leave the room");

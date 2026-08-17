@@ -49,6 +49,11 @@ func wrapLobbyError(err error) error {
 			ftag.With(ftag.AlreadyExists),
 			fmsg.WithDesc("join code is already in use", "Join code is already in use."),
 		)
+	case errors.Is(err, domain.ErrPlayerNameTaken):
+		return fault.Wrap(err,
+			ftag.With(ftag.AlreadyExists),
+			fmsg.WithDesc("player name is already taken", "A player with that name is already in the lobby."),
+		)
 	default:
 		return fault.Wrap(err, ftag.With(ftag.Internal), fmsg.With("lobby operation unavailable"))
 	}

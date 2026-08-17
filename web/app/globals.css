@@ -130,6 +130,31 @@ a {
   margin-inline: auto;
 }
 
+.ta-header-brand {
+  font-family: "Triple Fyodor Extended", "Triple Fyodor", Impact, sans-serif;
+  font-size: clamp(1.15rem, 3.5vw, 1.75rem);
+  line-height: 1.1;
+  letter-spacing: 0.03em;
+  text-transform: uppercase;
+  color: var(--ta-paper);
+}
+
+button.ta-header-brand {
+  background: transparent;
+  border: 0;
+  padding: 0;
+  transition: opacity 120ms ease, transform 120ms ease;
+}
+
+button.ta-header-brand:hover {
+  opacity: 0.85;
+  transform: translateY(-1px);
+}
+
+button.ta-header-brand:active {
+  transform: translateY(1px);
+}
+
 .ta-stage-inner {
   width: 100%;
   max-width: 56rem;
@@ -330,7 +355,8 @@ a {
     font-size: 0.78rem;
   }
 
-  .ta-header h1 {
+  .ta-header h1,
+  .ta-header-brand {
     font-size: 1.75rem;
   }
 
@@ -391,7 +417,8 @@ a {
     width: min(20rem, 70vw);
   }
 
-  .ta-header h1 {
+  .ta-header h1,
+  .ta-header-brand {
     font-size: 2rem;
   }
 

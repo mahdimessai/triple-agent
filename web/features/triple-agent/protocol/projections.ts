@@ -82,6 +82,11 @@ export type RoomProjection = {
       defection?: "BLUE_DEFECTOR" | "RED_DEFECTOR";
       votes: number;
       result: "WINNER" | "LOSER" | "DRAW";
+      objective_kind?: string;
+      objective_target_id?: string;
+      objective_target_name?: string;
+      objective_description?: string;
+      win_reason?: string;
     }>;
     activity?: string;
     pending_role_acks?: number;

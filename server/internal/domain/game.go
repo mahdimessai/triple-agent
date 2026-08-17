@@ -3,6 +3,7 @@ package domain
 import (
 	"errors"
 	"fmt"
+	"strings"
 	"time"
 )
 
@@ -234,6 +235,7 @@ var (
 	ErrAlreadySubmitted     = errors.New("command already submitted")
 	ErrRoomFull             = errors.New("room is full")
 	ErrPlayerNotInRoom      = errors.New("player is not in room")
+	ErrPlayerNameTaken      = errors.New("player name already taken")
 )
 
 func NewLobby(roomID, hostID string, hostName string, settings RoomSettings) GameState {
@@ -275,7 +277,16 @@ func (s *GameState) AddPlayer(id string, name string) error {
 	if _, exists := s.Players[id]; exists {
 		return fmt.Errorf("player already exists")
 	}
-	s.Players[id] = PlayerState{ID: id, Name: name, Seat: len(s.PlayerOrder) + 1, CanVote: true, VotingPower: 1}
+	trimmed := strings.TrimSpace(name)
+	if trimmed == "" {
+		return ErrInvalidTarget
+	}
+	for _, existing := range s.Players {
+		if strings.EqualFold(strings.TrimSpace(existing.Name), trimmed) {
+			return ErrPlayerNameTaken
+		}
+	}
+	s.Players[id] = PlayerState{ID: id, Name: trimmed, Seat: len(s.PlayerOrder) + 1, CanVote: true, VotingPower: 1}
 	s.PlayerOrder = append(s.PlayerOrder, id)
 	return nil
 }

@@ -49,21 +49,108 @@ func buildLeaderboard(state GameState) []LeaderboardEntry {
 	entries := make([]LeaderboardEntry, 0, len(state.PlayerOrder))
 	for _, id := range state.PlayerOrder {
 		player := state.Players[id]
+		won := playerWins(state, id)
 		result := "LOSER"
-		if playerWins(state, id) {
+		if won {
 			result = "WINNER"
 		}
+		targetName := ""
+		if player.ObjectiveTarget != "" {
+			if target, ok := state.Players[player.ObjectiveTarget]; ok {
+				targetName = target.Name
+			}
+		}
+		desc, reason := explainObjectiveAndResult(state, player, won, targetName)
 		entries = append(entries, LeaderboardEntry{
-			PlayerID:  id,
-			Name:      player.Name,
-			Faction:   player.Faction,
-			Role:      player.Role,
-			Defection: defectionFor(player),
-			Votes:     state.Vote.Totals[id],
-			Result:    result,
+			PlayerID:             id,
+			Name:                 player.Name,
+			Faction:              player.Faction,
+			Role:                 player.Role,
+			Defection:            defectionFor(player),
+			Votes:                state.Vote.Totals[id],
+			Result:               result,
+			ObjectiveKind:        player.ObjectiveKind,
+			ObjectiveTargetID:    player.ObjectiveTarget,
+			ObjectiveTargetName:  targetName,
+			ObjectiveDescription: desc,
+			WinReason:            reason,
 		})
 	}
 	return entries
+}
+
+func explainObjectiveAndResult(state GameState, player PlayerState, won bool, targetName string) (string, string) {
+	switch player.ObjectiveKind {
+	case "IMPRISON_SELF":
+		desc := "Operation: Scapegoat — win only by being imprisoned"
+		if won {
+			return desc, "Imprisoned and achieved solo victory"
+		}
+		return desc, "Was not imprisoned"
+
+	case "IMPRISON_TARGET":
+		desc := "Grudge — win if " + targetName + " is imprisoned"
+		if targetName == "" {
+			desc = "Grudge — win if your assigned target is imprisoned"
+		}
+		if won {
+			return desc, "Succeeded in getting " + targetName + " imprisoned"
+		}
+		return desc, "Failed: " + targetName + " was not imprisoned"
+
+	case "TARGET_WINS":
+		desc := "Infatuation — win if " + targetName + " wins"
+		if targetName == "" {
+			desc = "Infatuation — win if your assigned target wins"
+		}
+		if won {
+			return desc, "Felt the love: " + targetName + " won the match"
+		}
+		return desc, "Heartbroken: " + targetName + " lost the match"
+
+	case "RED_DEFECTOR":
+		desc := "Red Defector — defected to Service; win if Service wins with no VIRUS votes against you"
+		if won {
+			return desc, "Defected to Service and avoided all VIRUS votes"
+		}
+		if state.Winner != FactionService {
+			return desc, "Defected to Service, but The Service lost the round"
+		}
+		return desc, "Defected to Service, but was exposed by a VIRUS vote"
+
+	default:
+		defection := defectionFor(player)
+		if defection == "BLUE_DEFECTOR" {
+			desc := "Blue Defector — defected to VIRUS; win with VIRUS"
+			if won {
+				return desc, "Defected to VIRUS and won with VIRUS"
+			}
+			return desc, "Defected to VIRUS, but VIRUS lost the round"
+		}
+
+		if state.Vote.ImprisonedPlayerID != "" && state.Players[state.Vote.ImprisonedPlayerID].ObjectiveKind == "IMPRISON_SELF" {
+			if player.Faction == FactionVirus {
+				return "VIRUS agency victory", "Lost: Operation Scapegoat took the round"
+			}
+			return "The Service agency victory", "Lost: Operation Scapegoat took the round"
+		}
+
+		if player.Faction == FactionVirus {
+			desc := "VIRUS agency victory"
+			if won {
+				return desc, "Won with VIRUS"
+			}
+			return desc, "Lost with VIRUS"
+		} else if player.Faction == FactionService {
+			desc := "The Service agency victory"
+			if won {
+				return desc, "Won with The Service"
+			}
+			return desc, "Lost with The Service"
+		}
+
+		return "Agency victory", "Match concluded"
+	}
 }
 
 func defectionFor(player PlayerState) string {
@@ -97,8 +184,11 @@ func playerWinsWithVisited(state GameState, playerID string, visited map[string]
 			if playerID == state.Vote.ImprisonedPlayerID {
 				return true
 			}
-			if player.ObjectiveKind == "TARGET_WINS" && player.ObjectiveTarget == state.Vote.ImprisonedPlayerID {
+			if player.ObjectiveKind == "IMPRISON_TARGET" && player.ObjectiveTarget == state.Vote.ImprisonedPlayerID {
 				return true
+			}
+			if player.ObjectiveKind == "TARGET_WINS" && player.ObjectiveTarget != "" {
+				return playerWinsWithVisited(state, player.ObjectiveTarget, visited)
 			}
 			return false
 		}

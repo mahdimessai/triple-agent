@@ -17,13 +17,17 @@ export function GameHeader({
         <header className="ta-header border-b-4 border-black bg-ta-orange-deep px-3 py-3 text-ta-paper lg:px-5">
             <div className="ta-header-inner">
                 <div className="flex min-w-0 items-center gap-3">
-                    <button
-                        type="button"
-                        onClick={goHome}
-                        className="ta-display text-2xl cursor-pointer"
-                        aria-label="Go to home page">
-                        Triple Agent
-                    </button>
+                    {goHome ? (
+                        <button
+                            type="button"
+                            onClick={goHome}
+                            className="ta-header-brand cursor-pointer"
+                            aria-label="Go to home page">
+                            Triple Agent
+                        </button>
+                    ) : (
+                        <h1 className="ta-header-brand">Triple Agent</h1>
+                    )}
                 </div>
 
                 <nav
