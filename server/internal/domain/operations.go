@@ -756,6 +756,23 @@ func chooseRandomOthers(state *GameState, playerID string, count int) []string {
 	return selected
 }
 
+func chooseRandomSameInitialAgencyPair(state *GameState, playerID string) []string {
+	players := otherPlayerIDs(*state, playerID)
+	pairs := make([][2]string, 0)
+	for index, leftID := range players {
+		for _, rightID := range players[index+1:] {
+			if checkInitialFaction(state.Players[leftID]) == checkInitialFaction(state.Players[rightID]) {
+				pairs = append(pairs, [2]string{leftID, rightID})
+			}
+		}
+	}
+	if len(pairs) == 0 {
+		return nil
+	}
+	pair := pairs[nextRandom(state, len(pairs))]
+	return []string{pair[0], pair[1]}
+}
+
 func checkFaction(player PlayerState) Faction {
 	if player.ApparentFaction != nil {
 		return *player.ApparentFaction

@@ -38,7 +38,7 @@ func TestApplyLeaveRejectsStartedRoom(t *testing.T) {
 	}
 }
 
-func TestApplyDisconnectLobbyKeepsSeatAndTransfersHost(t *testing.T) {
+func TestApplyDisconnectLobbyRemovesSeatAndTransfersHost(t *testing.T) {
 	state := NewLobby("room", "host", "Host", DefaultRoomSettings())
 	if err := state.AddPlayer("player", "Player"); err != nil {
 		t.Fatal(err)
@@ -50,11 +50,13 @@ func TestApplyDisconnectLobbyKeepsSeatAndTransfersHost(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if len(transition.State.PlayerOrder) != 2 || transition.State.HostID != "player" {
+	if len(transition.State.PlayerOrder) != 1 || transition.State.PlayerOrder[0] != "player" || transition.State.HostID != "player" {
 		t.Fatalf("lobby after host disconnect = %#v", transition.State)
 	}
-	disconnected := transition.State.Players["host"]
-	if disconnected.Connected || disconnected.Ready {
-		t.Fatalf("disconnected lobby host = %#v, want offline and not ready", disconnected)
+	if _, exists := transition.State.Players["host"]; exists {
+		t.Fatal("disconnected lobby host still has a seat")
+	}
+	if transition.Event.Kind != "PLAYER_LEFT" {
+		t.Fatalf("disconnect event = %q, want PLAYER_LEFT", transition.Event.Kind)
 	}
 }

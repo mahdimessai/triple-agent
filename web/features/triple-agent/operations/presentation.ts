@@ -40,7 +40,7 @@ export function operationResultText(result: OperationResult, projection: RoomPro
     case "SAME_FACTION":
       return named.length === 2 ? `${named[0]} and ${named[1]} belong to the same agency.` : result.message;
     case "SAME_INITIAL_AGENCY":
-      return named.length === 2 ? `${named[0]} and ${named[1]} started on the same agency.` : result.message;
+      return named.length === 2 ? `${named[0]} and ${named[1]} worked for the same agency at the start.` : result.message;
     case "DIFFERENT_INITIAL_AGENCY":
       return named.length === 2 ? `${named[0]} and ${named[1]} started on different agencies.` : result.message;
     case "JOINED_VIRUS":
@@ -82,7 +82,7 @@ export const operationBriefs: Record<string, string> = {
   HiddenOneRandom: "HIDDEN AGENDA - The active player gets information about the agency of one other agent.",
   OneRandom: "The active player's source knows the agency of one other agent and reveals it to them.",
   OneOfTwo: "The active player intercepts a transmission with two names: one is a virus and the other is not.",
-  TwoFriends: "The active player found evidence that shows them the names of two agents that were working for the same agency at the start.",
+  TwoFriends: "The active player is shown two agents who worked for the same agency at the start.",
   Undercover: "The active player picks one agent to discover their true agency. If they turn out to be a virus agent, the active player will join their cause.",
   InfoForTwo: "The active player picks one agent. They will both look and see whether both or either of them work for a virus",
   ChooseVoteShield: "The active player must choose another player who will either add one vote against the active player or shield the active player from a single vote in the accusation phase.",
@@ -109,7 +109,7 @@ const roomBriefings: Record<string, { room: (name: string) => string; you: strin
   Share: { room: (name) => `${name} shows their agency to one player of their choice.`, you: "You show your agency to one player of your choice." },
   Detector: { room: (name) => `${name} checks two players and learns whether either one is VIRUS.`, you: "You check two players and learn whether either one is VIRUS." },
   OneOfTwo: { room: (name) => `${name} learns which of two players is VIRUS.`, you: "You learn which of two players is VIRUS." },
-  TwoFriends: { room: (name) => `${name} learns whether two players started on the same side.`, you: "You learn whether two players started on the same side." },
+  TwoFriends: { room: (name) => `${name} is shown two agents who worked for the same agency at the start.`, you: "You are shown two agents who worked for the same agency at the start." },
   Undercover: { room: (name) => `${name} investigates one player and may join them.`, you: "You investigate one player and may join them." },
   InfoForTwo: { room: (name) => `${name} and one player of their choice share the same VIRUS check.`, you: "You and one player of your choice share the same VIRUS check." },
   Defect: { room: (name) => `${name} chooses in secret whether to defect from their agency.`, you: "You choose in secret whether to defect from your agency." },

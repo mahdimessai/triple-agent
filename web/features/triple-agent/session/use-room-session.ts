@@ -62,6 +62,7 @@ export function useRoomSession({ screen, onScreenChange }: UseRoomSessionOptions
   const reconnectTimerRef = useRef<number | undefined>(undefined);
   const reconnectAttemptRef = useRef(0);
   const reconnectDeadlineRef = useRef<number | undefined>(undefined);
+  const phaseRef = useRef<Phase | undefined>(undefined);
 
   useEffect(() => {
     screenRef.current = screen;
@@ -102,6 +103,7 @@ export function useRoomSession({ screen, onScreenChange }: UseRoomSessionOptions
     socketRef.current?.close();
     socketRef.current = null;
     reconnectAttemptRef.current = 0;
+    phaseRef.current = undefined;
     clearRoomAction();
     clearPendingCommand();
     sessionRef.current = undefined;
@@ -114,12 +116,32 @@ export function useRoomSession({ screen, onScreenChange }: UseRoomSessionOptions
     onScreenChange("title");
   }
 
+  function releaseLobbySession(nextSession: LobbySession) {
+    connectionAttemptRef.current++;
+    cancelReconnect();
+    reconnectDeadlineRef.current = undefined;
+    reconnectAttemptRef.current = 0;
+    phaseRef.current = undefined;
+    clearRoomAction();
+    clearPendingCommand();
+    sessionRef.current = undefined;
+    clearLobbySession();
+    setSession(undefined);
+    setProjection(undefined);
+    setRoomCode(nextSession.join_code);
+    setConnectionState("closed");
+    setReconnecting(false);
+    setError("Your lobby seat was released; join again to return to the room.");
+    onScreenChange("join");
+  }
+
   function openSessionSocket(nextSession: LobbySession) {
     const attempt = ++connectionAttemptRef.current;
     const connection = connectRoom(nextSession, (nextProjection) => {
       if (attempt !== connectionAttemptRef.current) return;
       if (roomActionRef.current) clearRoomAction();
       setProjection(nextProjection);
+      phaseRef.current = nextProjection.public.phase;
       setTimerEnabled(nextProjection.public.settings.discussion_timer_enabled);
       const nextScreen = screenRef.current === "settings" && nextProjection.public.phase === "LOBBY"
         ? "settings"
@@ -142,7 +164,8 @@ export function useRoomSession({ screen, onScreenChange }: UseRoomSessionOptions
       } else if (state === "closed") {
         clearPendingCommand();
         socketRef.current = null;
-        if (details?.terminal) expireSession(details.message ?? SESSION_EXPIRED_MESSAGE);
+        if (phaseRef.current === "LOBBY") releaseLobbySession(nextSession);
+        else if (details?.terminal) expireSession(details.message ?? SESSION_EXPIRED_MESSAGE);
         else scheduleReconnect(nextSession);
       }
     });
@@ -178,6 +201,7 @@ export function useRoomSession({ screen, onScreenChange }: UseRoomSessionOptions
 
   function connectSession(nextSession: LobbySession) {
     sessionRef.current = nextSession;
+    phaseRef.current = undefined;
     saveLobbySession(nextSession);
     reconnectAttemptRef.current = 0;
     reconnectDeadlineRef.current = undefined;

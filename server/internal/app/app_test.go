@@ -80,7 +80,7 @@ func TestJoinLobbyFailsWhenRoomIsFull(t *testing.T) {
 	}
 }
 
-func TestSessionsKeepTheCredentialAndSeatForReconnect(t *testing.T) {
+func TestLobbySocketCloseReleasesSeatAndCannotReconnect(t *testing.T) {
 	store := admission.NewStore()
 	rooms := room.NewManager()
 	lobbies := NewLobbies(store, rooms)
@@ -99,13 +99,6 @@ func TestSessionsKeepTheCredentialAndSeatForReconnect(t *testing.T) {
 		t.Fatal("created room is not active")
 	}
 
-	// Attaching depends on the live room alone.
-	orphan, err := sessions.Attach(active, "missing-room", created.PlayerID, "session-host", func(domain.Projection) error { return nil }, func() {})
-	if err != nil {
-		t.Fatal("attach required lobby metadata:", err)
-	}
-	sessions.Detach(orphan)
-
 	session, err := sessions.Attach(active, created.RoomID, joined.PlayerID, "session-player", func(domain.Projection) error { return nil }, func() {})
 	if err != nil {
 		t.Fatal(err)
@@ -114,22 +107,76 @@ func TestSessionsKeepTheCredentialAndSeatForReconnect(t *testing.T) {
 		t.Fatal("attached player lost their credential:", err)
 	}
 
-	// A socket close is recoverable, including before the match starts.
+	// A socket close in the lobby releases the seat immediately.
 	sessions.Detach(session)
-	if err := store.ValidateReconnectToken(created.RoomID, joined.PlayerID, joined.ReconnectToken); err != nil {
-		t.Fatalf("credential after disconnect = %v, want usable credential", err)
+	if err := store.ValidateReconnectToken(created.RoomID, joined.PlayerID, joined.ReconnectToken); !errors.Is(err, admission.ErrInvalidToken) {
+		t.Fatalf("credential after lobby disconnect = %v, want %v", err, admission.ErrInvalidToken)
 	}
 	projection, err := active.Snapshot(created.PlayerID)
 	if err != nil {
 		t.Fatal(err)
 	}
+	if len(projection.Public.Players) != 1 || projection.Public.Players[0].ID != created.PlayerID {
+		t.Fatalf("lobby after socket close = %#v, want only the host", projection.Public.Players)
+	}
+	if _, err := sessions.Attach(active, created.RoomID, joined.PlayerID, "session-player-reconnected", func(domain.Projection) error { return nil }, func() {}); err == nil {
+		t.Fatal("a lobby player reclaimed a released seat with the old session")
+	}
+	if _, err := active.Snapshot(joined.PlayerID); err == nil {
+		t.Fatal("released lobby player remained addressable")
+	}
+
+	// A new join receives a fresh identity and is appended after the surviving
+	// host, so the former seat is not reserved for the old connection.
+	rejoined, err := lobbies.Join(JoinInput{JoinCode: created.JoinCode, PlayerName: "Player"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if rejoined.PlayerID == joined.PlayerID {
+		t.Fatal("fresh lobby join reused the released player identity")
+	}
+	projection, err = active.Snapshot(rejoined.PlayerID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if projection.Public.HostID != created.PlayerID || len(projection.Public.Players) != 2 {
+		t.Fatalf("fresh lobby join projection = %#v", projection.Public)
+	}
 	for _, player := range projection.Public.Players {
-		if player.ID == joined.PlayerID && player.Connected {
-			t.Fatal("disconnected lobby player remained connected")
+		if player.ID == rejoined.PlayerID && player.Seat != 2 {
+			t.Fatalf("fresh lobby join seat = %d, want 2", player.Seat)
 		}
 	}
-	if _, err := sessions.Attach(active, created.RoomID, joined.PlayerID, "session-player-reconnected", func(domain.Projection) error { return nil }, func() {}); err != nil {
-		t.Fatalf("reconnecting player could not attach: %v", err)
+}
+
+func TestInGameSocketCloseKeepsSeatAndCredentialForReconnect(t *testing.T) {
+	store := admission.NewStore()
+	rooms := room.NewManager()
+	sessions := NewSessions(store, rooms)
+	state := domain.NewLobby("room_in_game_reconnect", "host", "Host", domain.DefaultRoomSettings())
+	if err := state.AddPlayer("player", "Player"); err != nil {
+		t.Fatal(err)
+	}
+	state.Phase = domain.PhaseDiscussion
+	active := rooms.Create(state)
+	t.Cleanup(func() { rooms.Remove(state.RoomID) })
+	if err := store.Reserve(state.RoomID, "INGAME", "host", "host-token"); err != nil {
+		t.Fatal(err)
+	}
+	if err := store.Grant(state.RoomID, "player", "reconnect-token"); err != nil {
+		t.Fatal(err)
+	}
+
+	session, err := sessions.Attach(active, state.RoomID, "player", "session-player", func(domain.Projection) error { return nil }, func() {})
+	if err != nil {
+		t.Fatal(err)
+	}
+	sessions.Detach(session)
+	if err := store.ValidateReconnectToken(state.RoomID, "player", "reconnect-token"); err != nil {
+		t.Fatalf("in-game credential after disconnect = %v, want usable credential", err)
+	}
+	if _, err := sessions.Attach(active, state.RoomID, "player", "session-player-reconnected", func(domain.Projection) error { return nil }, func() {}); err != nil {
+		t.Fatalf("in-game player could not reconnect: %v", err)
 	}
 }
 

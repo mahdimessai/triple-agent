@@ -17,6 +17,9 @@ func (s *Sessions) Authenticate(roomID, playerID string, reconnectToken string) 
 	if !ok {
 		return nil, fault.Wrap(wrapSessionError(ErrRoomInactive), fmsg.With("failed to authenticate room session"))
 	}
+	if _, err := activeRoom.Snapshot(playerID); err != nil {
+		return nil, fault.Wrap(wrapSessionError(err), fmsg.With("failed to authenticate room session"))
+	}
 	return activeRoom, nil
 }
 
@@ -44,12 +47,18 @@ func (s *Sessions) Attach(activeRoom *room.Room, roomID, playerID string, sessio
 	return &Session{Room: activeRoom, RoomID: roomID, PlayerID: playerID, ID: sessionID}, nil
 }
 
-// Detach removes the actor session while preserving the player's reconnect
-// credential. Explicit lobby leave and room cleanup revoke credentials; a
-// socket close must remain recoverable.
+// Detach removes the actor session. An in-game socket close remains
+// recoverable, while a lobby socket close releases the seat immediately so a
+// later join creates a fresh player identity.
 func (s *Sessions) Detach(session *Session) {
 	if session == nil || session.Room == nil {
 		return
 	}
 	session.Room.Detach(session.PlayerID, session.ID)
+	// The actor has already applied its phase-specific absence policy. If the
+	// seat disappeared, revoke the credential as well so a lobby disconnect
+	// cannot be mistaken for an in-game reconnect.
+	if _, err := session.Room.Snapshot(session.PlayerID); err != nil {
+		s.admit.Revoke(session.RoomID, session.PlayerID)
+	}
 }

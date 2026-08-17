@@ -137,7 +137,7 @@ func (r *Room) loop(state domain.GameState) {
 
 			case "snapshot":
 				if _, ok := state.Players[message.playerID]; !ok {
-					message.reply <- roomResponse{err: errors.New("player is not in room")}
+					message.reply <- roomResponse{err: domain.ErrPlayerNotInRoom}
 					continue
 				}
 				message.reply <- roomResponse{reply: roomReply{projection: domain.Project(state, message.playerID)}}

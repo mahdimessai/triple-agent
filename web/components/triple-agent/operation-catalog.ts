@@ -144,7 +144,7 @@ export const operationCatalog = [
     status: "enabled",
     artName: "oldPhotographs",
     category: "information",
-    publicUpdate: "The active player is explaining evidence about two players' original agencies.",
+    publicUpdate: "The active player is explaining evidence about two players who worked for the same agency at the start.",
     privatePrompt: "The photographs show two players who worked for the same agency at the start.",
     input: "Private result",
   },
@@ -315,4 +315,3 @@ export const hiddenAgendaMemberIDs: ReadonlySet<OperationId> = new Set(["Strain"
 
 /** Expansion Pack 01: ships switched off, so a host opts in per room. */
 export const packOperationIDs: ReadonlySet<OperationId> = new Set(["Swap", "Undercover", "InfoForTwo", "ChooseVoteShield", "Defect"]);
-

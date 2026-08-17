@@ -231,6 +231,7 @@ var (
 	ErrNoEligibleOperations = errors.New("no eligible operations are enabled")
 	ErrAlreadySubmitted     = errors.New("command already submitted")
 	ErrRoomFull             = errors.New("room is full")
+	ErrPlayerNotInRoom      = errors.New("player is not in room")
 )
 
 func NewLobby(roomID, hostID string, hostName string, settings RoomSettings) GameState {
