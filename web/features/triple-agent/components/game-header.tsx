@@ -1,16 +1,13 @@
-import { ArtStamp } from "@/components/ui/art-stamp";
 import { ThemeMusic } from "@/components/triple-agent/theme-music";
 import type { ScreenId } from "@/features/triple-agent/model/screen";
 
 export function GameHeader({
                                screen,
-                               toggleSettings,
-                               liveSession,
                                goHome,
                            }: {
     screen: ScreenId;
-    toggleSettings: () => void;
-    liveSession: boolean;
+    toggleSettings?: () => void;
+    liveSession?: boolean;
     goHome?: () => void;
 }) {
     const inGame = screen !== "title" && screen !== "join" && screen !== "lobby" && screen !== "settings";
@@ -34,20 +31,6 @@ export function GameHeader({
                     className="flex items-center gap-2"
                     aria-label="Live room controls">
                     <ThemeMusic />
-                    {liveSession ? (
-                        <button
-                            className="ta-tab"
-                            aria-label={ screen === "settings" ? "Close room settings" : "Room settings"}
-                            aria-expanded={screen === "settings"}
-                            data-active={screen === "settings"}
-                            onClick={toggleSettings}
-                            type="button">
-                            <ArtStamp
-                                artName="settings"
-                                alt=""
-                                className="h-5 w-8 object-contain"/>
-                        </button>
-                    ) : null}
                 </nav>
             </div>
         </header>

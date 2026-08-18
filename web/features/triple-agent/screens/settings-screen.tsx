@@ -1,14 +1,20 @@
-import { memo, useCallback, useState } from "react";
+import { memo, useCallback, useEffect, useMemo, useState } from "react";
+import { createPortal } from "react-dom";
 import { ArtStamp } from "@/components/ui/art-stamp";
 import { PaperTitle } from "@/components/ui/paper-title";
-import { operationCatalog, liveOperationIDs, hiddenAgendaMemberIDs, packOperationIDs, getOperation, type OperationDefinition } from "@/components/triple-agent/operation-catalog";
-import { roleCatalog } from "@/components/triple-agent/role-catalog";
+import {
+  operationCatalog,
+  liveOperationIDs,
+  hiddenAgendaMemberIDs,
+  packOperationIDs,
+  getOperation,
+  type OperationDefinition,
+} from "@/components/triple-agent/operation-catalog";
+import { roleCatalog, type RoleDefinition } from "@/components/triple-agent/role-catalog";
 import type { RoomProjection } from "@/components/triple-agent/server-client";
 import type { CommandSender } from "@/features/triple-agent/model/screen";
 import { operationBrief } from "@/features/triple-agent/operations/presentation";
 
-// The server clamps discussion length to the same window, so the stepper can
-// never offer a value the room will silently reject.
 const MIN_DISCUSSION_SECONDS = 60;
 const MAX_DISCUSSION_SECONDS = 900;
 const DISCUSSION_STEP_SECONDS = 30;
@@ -21,322 +27,746 @@ function formatDuration(seconds: number) {
   return remainder === 0 ? `${minutes}:00` : `${minutes}:${String(remainder).padStart(2, "0")}`;
 }
 
-/**
- * One boxed value with a decrement and an increment arrow. Arrows disable at
- * the bounds instead of wrapping, so a host never rolls a maximum back to a
- * minimum by pressing once too often.
- */
-function Stepper({ label, hint, value, onDecrease, onIncrease, canDecrease, canIncrease, disabled }: { label: string; hint: string; value: string; onDecrease: () => void; onIncrease: () => void; canDecrease: boolean; canIncrease: boolean; disabled: boolean }) {
+const Stepper = memo(function Stepper({
+  label,
+  hint,
+  value,
+  onDecrease,
+  onIncrease,
+  canDecrease,
+  canIncrease,
+  disabled,
+}: {
+  label: string;
+  hint: string;
+  value: string;
+  onDecrease: () => void;
+  onIncrease: () => void;
+  canDecrease: boolean;
+  canIncrease: boolean;
+  disabled: boolean;
+}) {
   return (
     <div className="ta-stepper">
-      <p className="ta-condensed text-xs tracking-[0.16em] text-black/65">{label}</p>
+      <p className="ta-condensed text-xs font-bold tracking-[0.16em] text-black/75 uppercase">{label}</p>
       <div className="mt-2 flex items-stretch gap-2">
-        <button className="ta-stepper-arrow" type="button" aria-label={`Decrease ${label.toLowerCase()}`} disabled={disabled || !canDecrease} onClick={onDecrease}>
+        <button
+          className="ta-stepper-arrow"
+          type="button"
+          aria-label={`Decrease ${label.toLowerCase()}`}
+          disabled={disabled || !canDecrease}
+          onClick={onDecrease}
+        >
           &#9664;
         </button>
         <output className="ta-stepper-value ta-display">{value}</output>
-        <button className="ta-stepper-arrow" type="button" aria-label={`Increase ${label.toLowerCase()}`} disabled={disabled || !canIncrease} onClick={onIncrease}>
+        <button
+          className="ta-stepper-arrow"
+          type="button"
+          aria-label={`Increase ${label.toLowerCase()}`}
+          disabled={disabled || !canIncrease}
+          onClick={onIncrease}
+        >
           &#9654;
         </button>
       </div>
-      <p className="ta-condensed mt-2 text-sm leading-tight text-black/70">{hint}</p>
+      <p className="ta-condensed mt-2 text-xs leading-tight text-black/70">{hint}</p>
     </div>
   );
-}
+});
 
-/**
- * One toggleable card in the operations deck. The Hidden Agenda cover, its
- * envelopes and the pack operations all render through this, so a card reads
- * the same wherever it sits in the deck.
- */
 type ToggleHandler = (id: string, enabled: boolean) => void;
 
-const OperationCard = memo(function OperationCard({ operation, label, enabled, disabled, onToggle }: { operation: OperationDefinition; label: string; enabled: boolean; disabled: boolean; onToggle: ToggleHandler }) {
+type InspectedItem =
+  | {
+      type: "operation";
+      operation: OperationDefinition;
+      label: string;
+      enabled: boolean;
+      disabled: boolean;
+    }
+  | {
+      type: "role";
+      role: (typeof roleCatalog)[number];
+      enabled: boolean;
+      disabled: boolean;
+    }
+  | null;
+
+const CompactOperationCard = memo(function CompactOperationCard({
+  operation,
+  label,
+  enabled,
+  disabled,
+  onToggle,
+  onInspect,
+}: {
+  operation: OperationDefinition;
+  label: string;
+  enabled: boolean;
+  disabled: boolean;
+  onToggle: ToggleHandler;
+  onInspect: (op: OperationDefinition, label: string, enabled: boolean, disabled: boolean) => void;
+}) {
+  const handleInspectClick = useCallback(
+    (e: React.MouseEvent) => {
+      e.stopPropagation();
+      onInspect(operation, label, enabled, disabled);
+    },
+    [onInspect, operation, label, enabled, disabled]
+  );
+
+  const handleToggleClick = useCallback(() => {
+    onToggle(operation.id, !enabled);
+  }, [onToggle, operation.id, enabled]);
+
   return (
-    <button
-      className="ta-operation-card"
+    <div
+      className="ta-compact-card group"
       data-enabled={enabled}
-      disabled={disabled}
-      onClick={() => onToggle(operation.id, !enabled)}
-      type="button"
-      aria-pressed={enabled}
-      aria-label={`${enabled ? "Disable" : "Enable"} ${operation.name}`}
+      data-disabled={disabled ? "true" : undefined}
     >
-      <span className="ta-operation-card-art" aria-hidden="true">
-        <ArtStamp artName={operation.artName} alt="" className="h-16 w-20 object-contain" />
-      </span>
-      <span className="ta-operation-card-heading">
-        <span className="ta-display text-base leading-none">{operation.name}</span>
-        <span className="ta-condensed text-[0.58rem] tracking-[0.12em] text-black/55">{label}</span>
-      </span>
-      <span className="ta-operation-card-brief ta-scrollbar">{operationBrief(operation)}</span>
-      <span className="ta-operation-card-footer justify-center">
-        <span className="ta-condensed shrink-0 text-[0.62rem] tracking-[0.1em]">{enabled ? "ENABLED" : "DISABLED"}</span>
-      </span>
-    </button>
+      <button
+        type="button"
+        className="flex min-w-0 flex-1 items-center gap-2.5 text-left py-0.5"
+        disabled={disabled}
+        onClick={handleToggleClick}
+        aria-pressed={enabled}
+        aria-label={`${enabled ? "Disable" : "Enable"} ${operation.name}`}
+      >
+        <span className="ta-compact-card-art shrink-0" aria-hidden="true">
+          <ArtStamp artName={operation.artName} alt="" className="h-6 w-7 object-contain" />
+        </span>
+        <span className="min-w-0 flex-1 pr-1">
+          <span className="ta-condensed block text-xs sm:text-sm font-bold leading-snug tracking-tight text-ta-ink uppercase">
+            {operation.name}
+          </span>
+          <span className="ta-condensed block text-[0.6rem] font-bold tracking-wider text-black/60 uppercase">
+            {label}
+          </span>
+        </span>
+      </button>
+      <div className="flex items-center gap-1.5 shrink-0 pl-1">
+        <button
+          type="button"
+          className="ta-compact-info-btn"
+          aria-label={`Inspect ${operation.name} briefing`}
+          title="View tactical briefing"
+          onClick={handleInspectClick}
+        >
+          i
+        </button>
+        <button
+          type="button"
+          disabled={disabled}
+          onClick={handleToggleClick}
+          className={`ta-compact-status-badge ${enabled ? "ta-badge-enabled" : "ta-badge-disabled"}`}
+          aria-label={`Toggle ${operation.name}`}
+        >
+          {enabled ? "ON" : "OFF"}
+        </button>
+      </div>
+    </div>
   );
 });
 
-const RoleCard = memo(function RoleCard({ role, enabled, disabled, onToggle }: { role: (typeof roleCatalog)[number]; enabled: boolean; disabled: boolean; onToggle: ToggleHandler }) {
+const CompactRoleCard = memo(function CompactRoleCard({
+  role,
+  enabled,
+  disabled,
+  onToggle,
+  onInspect,
+}: {
+  role: (typeof roleCatalog)[number];
+  enabled: boolean;
+  disabled: boolean;
+  onToggle: ToggleHandler;
+  onInspect: (role: (typeof roleCatalog)[number], enabled: boolean, disabled: boolean) => void;
+}) {
+  const handleInspectClick = useCallback(
+    (e: React.MouseEvent) => {
+      e.stopPropagation();
+      onInspect(role, enabled, disabled);
+    },
+    [onInspect, role, enabled, disabled]
+  );
+
+  const handleToggleClick = useCallback(() => {
+    onToggle(role.id, !enabled);
+  }, [onToggle, role.id, enabled]);
+
   return (
-    <button
-      className="ta-operation-card"
+    <div
+      className="ta-compact-card group"
       data-enabled={enabled}
-      disabled={disabled}
-      type="button"
-      aria-pressed={enabled}
-      aria-label={`${enabled ? "Remove" : "Add"} ${role.name} ${enabled ? "from" : "to"} the role pool`}
-      onClick={() => onToggle(role.id, !enabled)}
+      data-disabled={disabled ? "true" : undefined}
     >
-      <span className="ta-operation-card-art" aria-hidden="true">
-        <ArtStamp artName={role.artName} alt="" className="h-16 w-20 object-contain" />
-      </span>
-      <span className="ta-operation-card-heading">
-        <span className="ta-display text-base leading-none">{role.name}</span>
-        <span className={`ta-condensed text-[0.58rem] tracking-[0.12em] ${role.faction === "VIRUS" ? "text-ta-red" : "text-[#1d5b79]"}`}>{role.faction}</span>
-      </span>
-      <span className="ta-operation-card-brief">{role.effect}</span>
-      <span className="ta-operation-card-footer justify-center">
-        <span className="ta-condensed shrink-0 text-[0.62rem] tracking-[0.1em]">{enabled ? "ENABLED" : "DISABLED"}</span>
-      </span>
-    </button>
+      <button
+        type="button"
+        className="flex min-w-0 flex-1 items-center gap-2.5 text-left py-0.5"
+        disabled={disabled}
+        onClick={handleToggleClick}
+        aria-pressed={enabled}
+        aria-label={`${enabled ? "Remove" : "Add"} ${role.name}`}
+      >
+        <span className="ta-compact-card-art shrink-0" aria-hidden="true">
+          <ArtStamp artName={role.artName} alt="" className="h-6 w-7 object-contain" />
+        </span>
+        <span className="min-w-0 flex-1 pr-1">
+          <span className="ta-condensed block text-xs sm:text-sm font-bold leading-snug tracking-tight text-ta-ink uppercase">
+            {role.name}
+          </span>
+          <span
+            className={`ta-condensed block text-[0.6rem] font-bold tracking-wider uppercase ${
+              role.faction === "VIRUS" ? "text-ta-red" : "text-[#1d5b79]"
+            }`}
+          >
+            {role.faction}
+          </span>
+        </span>
+      </button>
+      <div className="flex items-center gap-1.5 shrink-0 pl-1">
+        <button
+          type="button"
+          className="ta-compact-info-btn"
+          aria-label={`Inspect ${role.name} dossier`}
+          title="View role dossier"
+          onClick={handleInspectClick}
+        >
+          i
+        </button>
+        <button
+          type="button"
+          disabled={disabled}
+          onClick={handleToggleClick}
+          className={`ta-compact-status-badge ${enabled ? "ta-badge-enabled" : "ta-badge-disabled"}`}
+          aria-label={`Toggle ${role.name}`}
+        >
+          {enabled ? "ON" : "OFF"}
+        </button>
+      </div>
+    </div>
   );
 });
 
-export function SettingsScreen({ timerEnabled, setTimerEnabled, projection, liveSession = false, isHost = false, onCommand, pending = false, error }: { timerEnabled: boolean; setTimerEnabled: (value: boolean) => void; projection?: RoomProjection; liveSession?: boolean; isHost?: boolean; onCommand?: CommandSender; pending?: boolean; error?: string }) {
-  const enabledIDs = new Set(projection?.public.settings.enabled_operations ?? operationCatalog.filter((operation) => operation.status === "enabled").map((operation) => operation.id));
-  const canEdit = Boolean(liveSession && isHost && projection?.public.phase === "LOBBY");
-  const configuredOperations = operationCatalog.filter((operation) => operation.status !== "recovered-only" && liveOperationIDs.has(operation.id));
+function DossierModal({
+  item,
+  onClose,
+  canToggle,
+  onToggle,
+}: {
+  item: InspectedItem;
+  onClose: () => void;
+  canToggle?: boolean;
+  onToggle?: (id: string, enabled: boolean) => void;
+}) {
+  const [mounted, setMounted] = useState(false);
 
-  // Operations deck contains all standard and expansion operations together.
-  // Hidden Agenda is one group dealt under one cover, so its envelopes live in
-  // the Hidden Agenda section below where they emanate from the master cover.
-  const hiddenAgendaCover = getOperation("HiddenAgenda");
-  const hiddenAgendaMembers = configuredOperations.filter((operation) => hiddenAgendaMemberIDs.has(operation.id));
-  const deckOperations = configuredOperations.filter((operation) => !hiddenAgendaMemberIDs.has(operation.id) && operation.id !== "HiddenAgenda");
+  useEffect(() => {
+    setMounted(true);
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (e.key === "Escape") onClose();
+    };
+    window.addEventListener("keydown", handleKeyDown);
+    return () => window.removeEventListener("keydown", handleKeyDown);
+  }, [onClose]);
 
-  // Sort operations by enabled status first so active operations are at the top of the deck
-  const sortedDeckOperations = [...deckOperations].sort((a, b) => {
-    const aEnabled = enabledIDs.has(a.id);
-    const bEnabled = enabledIDs.has(b.id);
-    if (aEnabled && !bEnabled) return -1;
-    if (!aEnabled && bEnabled) return 1;
-    return 0;
-  });
+  if (!item || !mounted) return null;
 
-  const sortedHiddenAgendaMembers = [...hiddenAgendaMembers].sort((a, b) => {
-    const aEnabled = enabledIDs.has(a.id);
-    const bEnabled = enabledIDs.has(b.id);
-    if (aEnabled && !bEnabled) return -1;
-    if (!aEnabled && bEnabled) return 1;
-    return 0;
-  });
+  const isOp = item.type === "operation";
+  const title = isOp ? item.operation.name : item.role.name;
+  const artName = isOp ? item.operation.artName : item.role.artName;
+  const tag = isOp ? item.label : item.role.faction;
+  const tagColor = !isOp && item.role.faction === "VIRUS" ? "text-ta-red" : "text-[#1d5b79]";
+  const description = isOp ? operationBrief(item.operation) : item.role.effect;
+  const id = isOp ? item.operation.id : item.role.id;
 
-  // Hidden Agenda counts as one operation in the pool, so the deck counter and
-  // the cover's own state follow the group rather than its members.
-  const hiddenAgendaEnabled = hiddenAgendaMembers.some((operation) => enabledIDs.has(operation.id));
+  const modalContent = (
+    <div className="ta-modal-portal-backdrop" role="presentation" onClick={onClose}>
+      <div
+        className="ta-paper relative w-full max-w-md p-5 text-left border-4 border-black shadow-[8px_8px_0_var(--ta-shadow)]"
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby="dossier-dialog-title"
+        onClick={(e) => e.stopPropagation()}
+      >
+        <div className="flex items-start justify-between gap-3 border-b-2 border-black/25 pb-3.5">
+          <div className="flex items-center gap-3">
+            <div className="h-16 w-20 flex-shrink-0 border-2 border-black bg-white p-1 flex items-center justify-center shadow-[2px_2px_0_var(--ta-shadow)]">
+              <ArtStamp artName={artName} alt="" className="h-full w-full object-contain" />
+            </div>
+            <div>
+              <p className={`ta-condensed text-xs font-bold tracking-[0.16em] uppercase ${tagColor}`}>{tag}</p>
+              <h3 id="dossier-dialog-title" className="ta-display text-2xl leading-none text-ta-ink">
+                {title}
+              </h3>
+            </div>
+          </div>
+          <button
+            type="button"
+            className="ta-secondary-button !min-h-0 px-2.5 py-1 text-sm font-bold hover:!bg-ta-red"
+            onClick={onClose}
+            aria-label="Close dossier"
+          >
+            ✕
+          </button>
+        </div>
+
+        <div className="my-4">
+          <p className="ta-condensed text-xs font-bold tracking-[0.16em] text-black/60 uppercase">TACTICAL BRIEFING</p>
+          <p className="ta-condensed mt-1.5 text-base leading-relaxed text-black/90">{description}</p>
+        </div>
+
+        <div className="flex items-center justify-between border-t-2 border-black/25 pt-3.5">
+          <span className="ta-condensed text-xs font-bold tracking-[0.14em] text-black/75">
+            STATUS: {item.enabled ? "ENABLED IN MATCH" : "DISABLED"}
+          </span>
+          {canToggle && onToggle && !item.disabled ? (
+            <button
+              type="button"
+              className={`ta-secondary-button !min-h-0 border-2 border-black px-4 py-1.5 text-xs font-bold uppercase tracking-wider ${
+                item.enabled ? "hover:!bg-ta-red" : "hover:!bg-ta-teal"
+              }`}
+              onClick={() => {
+                onToggle(id, !item.enabled);
+                onClose();
+              }}
+            >
+              {item.enabled ? "Disable" : "Enable"}
+            </button>
+          ) : (
+            <span className="ta-condensed text-xs font-bold text-black/50 tracking-wider">HOST CONTROLLED</span>
+          )}
+        </div>
+      </div>
+    </div>
+  );
+
+  return createPortal(modalContent, document.body);
+}
+
+// 1. Isolated & Memoized Match Setup Steppers
+const MatchSetupSection = memo(function MatchSetupSection({
+  isTimerActive,
+  currentSeconds,
+  currentVirusCount,
+  controlsLocked,
+  pending,
+  liveSession,
+  isHost,
+  onSetDuration,
+  onSetVirusCount,
+}: {
+  isTimerActive: boolean;
+  currentSeconds: number;
+  currentVirusCount: number;
+  controlsLocked: boolean;
+  pending: boolean;
+  liveSession: boolean;
+  isHost: boolean;
+  onSetDuration: (seconds: number) => void;
+  onSetVirusCount: (count: number) => void;
+}) {
+  return (
+    <div className="ta-paper p-4">
+      <div className="mb-3 flex flex-wrap items-center justify-between gap-2 border-b-2 border-black/15 pb-2.5">
+        <div>
+          <p className="ta-condensed text-xs font-bold tracking-[0.16em] uppercase text-ta-ink">MATCH SETUP</p>
+          <p className="ta-condensed text-xs text-black/70">
+            {pending
+              ? "Saving the room setting…"
+              : controlsLocked
+              ? "Live settings (Host controlled)"
+              : "Set the discussion length and how many agents start as VIRUS."}
+          </p>
+        </div>
+        {liveSession && !isHost ? (
+          <span className="ta-condensed text-[0.65rem] font-bold tracking-wider uppercase px-2 py-0.5 bg-black/10 border-2 border-black/25">
+            HOST CONTROLLED
+          </span>
+        ) : null}
+      </div>
+      <div className="grid gap-3 sm:grid-cols-2">
+        <Stepper
+          label="DISCUSSION TIMER"
+          value={isTimerActive ? formatDuration(currentSeconds) : "OFF"}
+          hint={
+            isTimerActive
+              ? `Step below ${formatDuration(MIN_DISCUSSION_SECONDS)} for untimed. Max ${formatDuration(MAX_DISCUSSION_SECONDS)}.`
+              : "Discussion runs untimed until the host advances."
+          }
+          disabled={controlsLocked}
+          canDecrease={isTimerActive}
+          canIncrease={!isTimerActive || currentSeconds < MAX_DISCUSSION_SECONDS}
+          onDecrease={() => onSetDuration(currentSeconds - DISCUSSION_STEP_SECONDS)}
+          onIncrease={() =>
+            onSetDuration(
+              isTimerActive
+                ? currentSeconds + DISCUSSION_STEP_SECONDS
+                : Math.max(MIN_DISCUSSION_SECONDS, currentSeconds)
+            )
+          }
+        />
+        <Stepper
+          label="VIRUS TEAM SIZE"
+          value={currentVirusCount === 0 ? "AUTO" : String(currentVirusCount)}
+          hint={
+            currentVirusCount === 0
+              ? "Auto-scales: 2 for 5-6 players, 3 for 7+."
+              : `${currentVirusCount} agent${currentVirusCount === 1 ? "" : "s"} start as VIRUS.`
+          }
+          disabled={controlsLocked}
+          canDecrease={currentVirusCount > MIN_VIRUS_COUNT}
+          canIncrease={currentVirusCount < MAX_VIRUS_COUNT}
+          onDecrease={() => onSetVirusCount(currentVirusCount - 1)}
+          onIncrease={() => onSetVirusCount(currentVirusCount + 1)}
+        />
+      </div>
+    </div>
+  );
+});
+
+// 2. Isolated & Memoized Special Roles Section
+const SpecialRolesSection = memo(function SpecialRolesSection({
+  enabledRoleIDs,
+  controlsLocked,
+  onToggleRole,
+  onInspectRole,
+}: {
+  enabledRoleIDs: Set<string>;
+  controlsLocked: boolean;
+  onToggleRole: ToggleHandler;
+  onInspectRole: (role: RoleDefinition, enabled: boolean, disabled: boolean) => void;
+}) {
+  const activeRoleCount = useMemo(
+    () => roleCatalog.filter((role) => enabledRoleIDs.has(role.id)).length,
+    [enabledRoleIDs]
+  );
+
+  return (
+    <div className="ta-paper p-4">
+      <div className="mb-3 flex items-end justify-between gap-3 border-b-2 border-black/15 pb-2.5">
+        <div>
+          <p className="ta-condensed text-xs font-bold tracking-[0.16em] uppercase text-ta-ink">SPECIAL ROLES</p>
+          <p className="ta-condensed mt-0.5 text-xs leading-tight text-black/70">
+            Secret roles dealt on top of agency. Click card to toggle, <strong>i</strong> for dossier.
+          </p>
+        </div>
+        <span className="ta-condensed shrink-0 text-xs font-bold tracking-[0.12em] bg-black/10 px-2 py-0.5 border border-black/20">
+          {activeRoleCount} / {roleCatalog.length} IN POOL
+        </span>
+      </div>
+      <div className="grid gap-2.5 sm:grid-cols-2">
+        {roleCatalog.map((role) => (
+          <CompactRoleCard
+            key={role.id}
+            role={role}
+            enabled={enabledRoleIDs.has(role.id)}
+            disabled={controlsLocked}
+            onToggle={onToggleRole}
+            onInspect={onInspectRole}
+          />
+        ))}
+      </div>
+    </div>
+  );
+});
+
+// 3. Isolated & Memoized Operations Deck Section
+const OperationsDeckSection = memo(function OperationsDeckSection({
+  enabledIDs,
+  canEdit,
+  onToggleOperation,
+  onInspectOperation,
+}: {
+  enabledIDs: Set<string>;
+  canEdit: boolean;
+  onToggleOperation: ToggleHandler;
+  onInspectOperation: (op: OperationDefinition, label: string, enabled: boolean, disabled: boolean) => void;
+}) {
+  const configuredOperations = useMemo(
+    () => operationCatalog.filter((op) => op.status !== "recovered-only" && liveOperationIDs.has(op.id)),
+    []
+  );
+
+  const hiddenAgendaCover = useMemo(() => getOperation("HiddenAgenda"), []);
+  const hiddenAgendaMembers = useMemo(
+    () => configuredOperations.filter((op) => hiddenAgendaMemberIDs.has(op.id)),
+    [configuredOperations]
+  );
+  const deckOperations = useMemo(
+    () => configuredOperations.filter((op) => !hiddenAgendaMemberIDs.has(op.id) && op.id !== "HiddenAgenda"),
+    [configuredOperations]
+  );
+
+  const hiddenAgendaEnabled = useMemo(
+    () => hiddenAgendaMembers.some((op) => enabledIDs.has(op.id)),
+    [hiddenAgendaMembers, enabledIDs]
+  );
   const deckSize = deckOperations.length + 1;
-  const activeCount = deckOperations.filter((operation) => enabledIDs.has(operation.id)).length + (hiddenAgendaEnabled ? 1 : 0);
+  const activeCount = useMemo(
+    () => deckOperations.filter((op) => enabledIDs.has(op.id)).length + (hiddenAgendaEnabled ? 1 : 0),
+    [deckOperations, enabledIDs, hiddenAgendaEnabled]
+  );
 
-  const toggleOperation = useCallback<ToggleHandler>((operationID, enabled) => {
-    if (!canEdit) return;
-    onCommand?.("lobby.operation_enabled", { operationKind: operationID, operationEnabled: enabled });
-  }, [canEdit, onCommand]);
+  const lockedOff = useCallback(
+    (opId: string) => !canEdit || (enabledIDs.has(opId) && enabledIDs.size <= 1),
+    [canEdit, enabledIDs]
+  );
 
-  // The room needs at least one operation left to deal, so the last enabled
-  // card locks rather than emptying the deck.
-  function lockedOff(operationID: string) {
-    return !canEdit || (enabledIDs.has(operationID) && enabledIDs.size <= 1);
-  }
+  return (
+    <div className="ta-paper p-4">
+      <div className="mb-3 flex items-end justify-between gap-3 border-b-2 border-black/15 pb-2.5">
+        <div>
+          <p className="ta-condensed text-xs font-bold tracking-[0.16em] uppercase text-ta-ink">OPERATIONS DECK</p>
+          <p className="ta-condensed text-xs text-black/70">
+            Dealt from one shuffled global deck. Click card to toggle, <strong>i</strong> for tactical briefing.
+          </p>
+        </div>
+        <span className="ta-condensed text-xs font-bold tracking-[0.12em] bg-black/10 px-2 py-0.5 border border-black/20">
+          {activeCount} / {deckSize} ACTIVE
+        </span>
+      </div>
+      <div className="grid gap-2.5 sm:grid-cols-2">
+        {deckOperations.map((operation) => (
+          <CompactOperationCard
+            key={operation.id}
+            operation={operation}
+            label={packOperationIDs.has(operation.id) ? "PACK 01" : operation.category.toUpperCase()}
+            enabled={enabledIDs.has(operation.id)}
+            disabled={lockedOff(operation.id)}
+            onToggle={onToggleOperation}
+            onInspect={onInspectOperation}
+          />
+        ))}
+      </div>
 
-  // Outside a live room there is no server to hold these, so the screen keeps
-  // its own copy and stays interactive in the workbench.
+      {/* Hidden Agenda Group */}
+      <div className="mt-4 border-2 border-black/25 bg-black/[0.03] p-3.5">
+        <p className="ta-condensed text-[0.68rem] font-bold tracking-[0.18em] text-black/70 uppercase mb-2.5">
+          HIDDEN AGENDA EXPANSION
+        </p>
+        <div className="flex flex-col items-center">
+          <div className="w-full max-w-sm mb-3">
+            <CompactOperationCard
+              operation={hiddenAgendaCover}
+              label="MASTER COVER"
+              enabled={hiddenAgendaEnabled}
+              disabled={!canEdit}
+              onToggle={onToggleOperation}
+              onInspect={onInspectOperation}
+            />
+          </div>
+
+          {/* Envelopes */}
+          <div className="grid w-full gap-2.5 sm:grid-cols-2">
+            {hiddenAgendaMembers.map((operation) => (
+              <CompactOperationCard
+                key={operation.id}
+                operation={operation}
+                label="ENVELOPE"
+                enabled={enabledIDs.has(operation.id)}
+                disabled={lockedOff(operation.id)}
+                onToggle={onToggleOperation}
+                onInspect={onInspectOperation}
+              />
+            ))}
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+});
+
+export function SettingsPanel({
+  timerEnabled,
+  setTimerEnabled,
+  projection,
+  liveSession = false,
+  isHost = false,
+  onCommand,
+  pending = false,
+  error,
+  showHeader = true,
+}: {
+  timerEnabled: boolean;
+  setTimerEnabled: (value: boolean) => void;
+  projection?: RoomProjection;
+  liveSession?: boolean;
+  isHost?: boolean;
+  onCommand?: CommandSender;
+  pending?: boolean;
+  error?: string;
+  showHeader?: boolean;
+}) {
+  const canEdit = Boolean(liveSession && isHost && projection?.public.phase === "LOBBY");
+  const controlsLocked = liveSession && (!canEdit || pending);
+
+  const [inspectedItem, setInspectedItem] = useState<InspectedItem>(null);
+
+  // Stable memoized sets for enabled IDs
+  const enabledIDs = useMemo(() => {
+    if (projection?.public.settings.enabled_operations) {
+      return new Set(projection.public.settings.enabled_operations);
+    }
+    return new Set(
+      operationCatalog.filter((operation) => operation.status === "enabled").map((operation) => operation.id)
+    );
+  }, [projection?.public.settings.enabled_operations]);
+
+  const [localRoles, setLocalRoles] = useState<Set<string>>(() => new Set());
+  const enabledRoleIDs = useMemo(() => {
+    if (projection?.public.settings.enabled_roles) {
+      return new Set(projection.public.settings.enabled_roles);
+    }
+    return localRoles;
+  }, [projection?.public.settings.enabled_roles, localRoles]);
+
   const [localSeconds, setLocalSeconds] = useState(300);
   const [localVirusCount, setLocalVirusCount] = useState(0);
   const currentSeconds = projection?.public.settings.discussion_seconds ?? localSeconds;
   const currentVirusCount = projection?.public.settings.virus_count ?? localVirusCount;
   const isTimerActive = projection ? projection.public.settings.discussion_timer_enabled : timerEnabled;
-  const [localRoles, setLocalRoles] = useState<Set<string>>(() => new Set());
-  const enabledRoleIDs = new Set(projection?.public.settings.enabled_roles ?? [...localRoles]);
-  const controlsLocked = liveSession && (!canEdit || pending);
 
-  /**
-   * One step below the minimum turns the timer off rather than clamping, so the
-   * left arrow keeps meaning "less time" all the way down and the OFF state
-   * needs no separate control.
-   */
-  function setDuration(seconds: number) {
-    if (seconds < MIN_DISCUSSION_SECONDS) {
-      if (canEdit) onCommand?.("lobby.discussion_timer", { discussionTimerEnabled: false, discussionSeconds: currentSeconds });
-      else if (!liveSession) setTimerEnabled(false);
-      return;
-    }
-    const clamped = Math.min(MAX_DISCUSSION_SECONDS, seconds);
-    if (canEdit) {
-      onCommand?.("lobby.discussion_timer", { discussionTimerEnabled: true, discussionSeconds: clamped });
-    } else if (!liveSession) {
-      setTimerEnabled(true);
-      setLocalSeconds(clamped);
-    }
-  }
+  const handleSetDuration = useCallback(
+    (seconds: number) => {
+      if (seconds < MIN_DISCUSSION_SECONDS) {
+        if (canEdit) {
+          onCommand?.("lobby.discussion_timer", {
+            discussionTimerEnabled: false,
+            discussionSeconds: currentSeconds,
+          });
+        } else if (!liveSession) {
+          setTimerEnabled(false);
+        }
+        return;
+      }
+      const clamped = Math.min(MAX_DISCUSSION_SECONDS, seconds);
+      if (canEdit) {
+        onCommand?.("lobby.discussion_timer", {
+          discussionTimerEnabled: true,
+          discussionSeconds: clamped,
+        });
+      } else if (!liveSession) {
+        setTimerEnabled(true);
+        setLocalSeconds(clamped);
+      }
+    },
+    [canEdit, currentSeconds, liveSession, onCommand, setTimerEnabled]
+  );
 
-  function setVirusCount(count: number) {
-    const clamped = Math.min(MAX_VIRUS_COUNT, Math.max(MIN_VIRUS_COUNT, count));
-    if (canEdit) {
-      onCommand?.("lobby.virus_count", { virusCount: clamped });
-    } else if (!liveSession) {
-      setLocalVirusCount(clamped);
-    }
-  }
+  const handleSetVirusCount = useCallback(
+    (count: number) => {
+      const clamped = Math.min(MAX_VIRUS_COUNT, Math.max(MIN_VIRUS_COUNT, count));
+      if (canEdit) {
+        onCommand?.("lobby.virus_count", { virusCount: clamped });
+      } else if (!liveSession) {
+        setLocalVirusCount(clamped);
+      }
+    },
+    [canEdit, liveSession, onCommand]
+  );
 
-  const toggleRole = useCallback<ToggleHandler>((roleID, enabled) => {
-    if (canEdit) {
-      onCommand?.("lobby.role_enabled", { roleId: roleID, roleEnabled: enabled });
-    } else if (!liveSession) {
-      setLocalRoles((current) => {
-        const next = new Set(current);
-        if (next.has(roleID)) next.delete(roleID);
-        else next.add(roleID);
-        return next;
-      });
-    }
-  }, [canEdit, liveSession, onCommand]);
+  const toggleOperation = useCallback<ToggleHandler>(
+    (operationID, enabled) => {
+      if (!canEdit) return;
+      onCommand?.("lobby.operation_enabled", { operationKind: operationID, operationEnabled: enabled });
+    },
+    [canEdit, onCommand]
+  );
+
+  const toggleRole = useCallback<ToggleHandler>(
+    (roleID, enabled) => {
+      if (canEdit) {
+        onCommand?.("lobby.role_enabled", { roleId: roleID, roleEnabled: enabled });
+      } else if (!liveSession) {
+        setLocalRoles((current) => {
+          const next = new Set(current);
+          if (next.has(roleID)) next.delete(roleID);
+          else next.add(roleID);
+          return next;
+        });
+      }
+    },
+    [canEdit, liveSession, onCommand]
+  );
+
+  const handleInspectOperation = useCallback(
+    (op: OperationDefinition, label: string, enabled: boolean, disabled: boolean) => {
+      setInspectedItem({ type: "operation", operation: op, label, enabled, disabled });
+    },
+    []
+  );
+
+  const handleInspectRole = useCallback(
+    (role: RoleDefinition, enabled: boolean, disabled: boolean) => {
+      setInspectedItem({ type: "role", role, enabled, disabled });
+    },
+    []
+  );
+
+  const handleCloseModal = useCallback(() => {
+    setInspectedItem(null);
+  }, []);
 
   return (
-    <div className="ta-rise ta-screen ta-screen--settings space-y-4">
-      <PaperTitle>Room settings</PaperTitle>
+    <div className="space-y-4">
+      {showHeader ? <PaperTitle>Room settings</PaperTitle> : null}
 
-      {/* Match setup: the two numbers a host actually tunes, side by side. */}
-      <div className="ta-paper p-4">
-        <div className="mb-4">
-          <p className="ta-condensed text-xs tracking-[0.16em]">MATCH SETUP</p>
-            <p className="ta-condensed text-sm">{pending ? "Saving the room setting…" : controlsLocked ? "Only the host can change these before the match starts." : "Set the discussion length and how many agents work for VIRUS."}</p>
-        </div>
-        <div className="grid gap-3 sm:grid-cols-2">
-          <Stepper
-            label="DISCUSSION TIMER"
-            value={isTimerActive ? formatDuration(currentSeconds) : "OFF"}
-            hint={isTimerActive ? `Step below ${formatDuration(MIN_DISCUSSION_SECONDS)} to run discussion untimed. Longest is ${formatDuration(MAX_DISCUSSION_SECONDS)}.` : "Discussion runs untimed until the host moves the room on. Step up to put it back on a clock."}
-            disabled={controlsLocked}
-            canDecrease={isTimerActive}
-            canIncrease={!isTimerActive || currentSeconds < MAX_DISCUSSION_SECONDS}
-            onDecrease={() => setDuration(currentSeconds - DISCUSSION_STEP_SECONDS)}
-            onIncrease={() => setDuration(isTimerActive ? currentSeconds + DISCUSSION_STEP_SECONDS : Math.max(MIN_DISCUSSION_SECONDS, currentSeconds))}
-          />
-          <Stepper
-            label="VIRUS TEAM SIZE"
-            value={currentVirusCount === 0 ? "AUTO" : String(currentVirusCount)}
-            hint={currentVirusCount === 0 ? "Scales with the table: 2 VIRUS agents for 5 to 6 players, 3 for 7 or more." : `${currentVirusCount} agent${currentVirusCount === 1 ? "" : "s"} start the match working for VIRUS.`}
-            disabled={controlsLocked}
-            canDecrease={currentVirusCount > MIN_VIRUS_COUNT}
-            canIncrease={currentVirusCount < MAX_VIRUS_COUNT}
-            onDecrease={() => setVirusCount(currentVirusCount - 1)}
-            onIncrease={() => setVirusCount(currentVirusCount + 1)}
-          />
-        </div>
-      </div>
+      <MatchSetupSection
+        isTimerActive={isTimerActive}
+        currentSeconds={currentSeconds}
+        currentVirusCount={currentVirusCount}
+        controlsLocked={controlsLocked}
+        pending={pending}
+        liveSession={liveSession}
+        isHost={isHost}
+        onSetDuration={handleSetDuration}
+        onSetVirusCount={handleSetVirusCount}
+      />
 
-      {/* Special roles, dealt on top of an agency and toggled one by one. */}
-      <div className="ta-paper p-4">
-        <div className="mb-4 flex items-end justify-between gap-3">
-          <div>
-            <p className="ta-condensed text-xs tracking-[0.16em]">SPECIAL ROLES</p>
-            <p className="ta-condensed mt-1 max-w-prose text-sm leading-tight">
-              A secret role dealt on top of an agency at the start of the match. It never changes who an agent wins with, only what the table can learn about them or
-              do to them. Leave the pool empty to play without roles.
-            </p>
-          </div>
-          <span className="ta-condensed shrink-0 text-xs tracking-[0.12em]">
-            {roleCatalog.filter((role) => enabledRoleIDs.has(role.id)).length} / {roleCatalog.length} IN THE POOL
-          </span>
-        </div>
-        <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-3">
-          {roleCatalog.map((role) => {
-            const enabled = enabledRoleIDs.has(role.id);
-            return <RoleCard key={role.id} role={role} enabled={enabled} disabled={controlsLocked} onToggle={toggleRole} />;
-          })}
-        </div>
-      </div>
+      <SpecialRolesSection
+        enabledRoleIDs={enabledRoleIDs}
+        controlsLocked={controlsLocked}
+        onToggleRole={toggleRole}
+        onInspectRole={handleInspectRole}
+      />
 
-      {/* Every operation the room can deal in the main operations deck,
-          plus Hidden Agenda centered below with all envelopes emanating from it. */}
-      <div className="ta-paper p-4">
-        <div className="mb-4 flex items-end justify-between gap-3">
-          <div>
-            <p className="ta-condensed text-xs tracking-[0.16em]">OPERATIONS DECK</p>
-              <p className="ta-condensed text-sm">Enabled operations are dealt from one shuffled global deck before the deck cycles. Dimmed cards are switched off.</p>
-          </div>
-          <span className="ta-condensed text-xs tracking-[0.12em]">
-            {activeCount} / {deckSize} ACTIVE
-          </span>
-        </div>
-        <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-3">
-          {sortedDeckOperations.map((operation) => (
-            <OperationCard
-              key={operation.id}
-              operation={operation}
-              label={packOperationIDs.has(operation.id) ? "PACK 01" : operation.category.toUpperCase()}
-              enabled={enabledIDs.has(operation.id)}
-              disabled={lockedOff(operation.id)}
-              onToggle={toggleOperation}
-            />
-          ))}
-        </div>
-
-        {/* Hidden Agenda is centered in the box with all envelopes emanating from it. */}
-        <div className="mt-6 border-2 border-black/25 bg-black/[0.02] p-4">
-          <div className="mb-4 flex flex-col gap-2 sm:flex-row sm:items-end sm:justify-between">
-          </div>
-
-          <div className="flex flex-col items-center">
-            {/* Master Cover Card in the Middle */}
-            <div className="w-full max-w-xs">
-              <OperationCard
-                operation={hiddenAgendaCover}
-                label="THE MASTER COVER"
-                enabled={hiddenAgendaEnabled}
-                disabled={!canEdit}
-                onToggle={toggleOperation}
-              />
-            </div>
-
-            {/* Visual connector lines emanating from cover. The tick row mirrors the
-                envelope grid's columns so the legs land under the cards at every width. */}
-            <div className="my-3 flex w-full flex-col items-center" aria-hidden="true">
-              <div className="h-4 w-0.5 bg-black/40" />
-              {/* One column: a bare stem reads better than a bracket over a single stack. */}
-              <div className="hidden w-full flex-col items-center sm:flex">
-                <div className="h-2 w-full border-t-2 border-black/40" />
-                <div className="grid h-2 w-full grid-cols-2 gap-3 overflow-hidden lg:grid-cols-3 xl:grid-cols-5">
-                  {sortedHiddenAgendaMembers.map((operation) => (
-                    <div className="flex justify-center" key={operation.id}>
-                      <div className="h-2 w-0.5 bg-black/40" />
-                    </div>
-                  ))}
-                </div>
-              </div>
-              <span className="ta-condensed mt-1 max-w-full text-center text-[0.6rem] font-bold tracking-[0.12em] text-black/60 uppercase sm:text-[0.65rem] sm:tracking-[0.2em]">
-              </span>
-            </div>
-
-            {/* Envelopes radiating/emanating below */}
-            <div className="grid w-full gap-3 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-5">
-              {sortedHiddenAgendaMembers.map((operation) => (
-                <OperationCard
-                  key={operation.id}
-                  operation={operation}
-                  label="ENVELOPE"
-                  enabled={enabledIDs.has(operation.id)}
-                  disabled={lockedOff(operation.id)}
-                  onToggle={toggleOperation}
-                />
-              ))}
-            </div>
-          </div>
-        </div>
-      </div>
+      <OperationsDeckSection
+        enabledIDs={enabledIDs}
+        canEdit={canEdit}
+        onToggleOperation={toggleOperation}
+        onInspectOperation={handleInspectOperation}
+      />
 
       {error ? <p className="ta-condensed text-sm text-white">{error}</p> : null}
+
+      <DossierModal
+        item={inspectedItem}
+        onClose={handleCloseModal}
+        canToggle={canEdit}
+        onToggle={(id, en) => {
+          if (inspectedItem?.type === "operation") toggleOperation(id, en);
+          else if (inspectedItem?.type === "role") toggleRole(id, en);
+        }}
+      />
+    </div>
+  );
+}
+
+export function SettingsScreen(props: {
+  timerEnabled: boolean;
+  setTimerEnabled: (value: boolean) => void;
+  projection?: RoomProjection;
+  liveSession?: boolean;
+  isHost?: boolean;
+  onCommand?: CommandSender;
+  pending?: boolean;
+  error?: string;
+}) {
+  return (
+    <div className="ta-rise ta-screen ta-screen--wide ta-screen--settings space-y-4">
+      <SettingsPanel {...props} showHeader={true} />
     </div>
   );
 }

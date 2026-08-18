@@ -130,6 +130,12 @@ a {
   margin-inline: auto;
 }
 
+@media (min-width: 1024px) {
+  .ta-header-inner {
+    max-width: 76rem;
+  }
+}
+
 .ta-header-brand {
   font-family: "Triple Fyodor Extended", "Triple Fyodor", Impact, sans-serif;
   font-size: clamp(1.15rem, 3.5vw, 1.75rem);
@@ -162,6 +168,12 @@ button.ta-header-brand:active {
   margin-inline: auto;
 }
 
+@media (min-width: 1024px) {
+  .ta-stage-inner {
+    max-width: 76rem;
+  }
+}
+
 /* Every screen sits in the same column as the title screen: one measure, one
    set of gutters, vertically centred when it fits. `min-height` rather than
    `height` means a tall screen simply grows instead of being centred out of
@@ -176,6 +188,14 @@ button.ta-header-brand:active {
   min-height: 100%;
   margin-inline: auto;
   padding: 1.5rem 1rem;
+}
+
+@media (min-width: 1024px) {
+  .ta-screen--wide,
+  .ta-screen--lobby,
+  .ta-screen--settings {
+    max-width: 76rem;
+  }
 }
 
 /* The stopwatch ticks one step per second rather than sweeping, so it reads as
@@ -1035,6 +1055,133 @@ button.ta-header-brand:active {
   gap: 0.5rem;
   border-top: 2px solid rgb(18 16 14 / 0.18);
   padding-top: 0.45rem;
+}
+
+/* Compact Operation & Role Cards */
+.ta-compact-card {
+  position: relative;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.5rem;
+  width: 100%;
+  min-height: 3.5rem;
+  padding: 0.4rem 0.65rem;
+  border: 2px solid var(--ta-ink);
+  background: var(--ta-paper-soft);
+  color: var(--ta-ink);
+  text-align: left;
+  transition: transform 120ms ease, background-color 120ms ease, border-color 120ms ease, box-shadow 120ms ease;
+  user-select: none;
+}
+
+.ta-compact-card[data-enabled="true"] {
+  border-color: var(--ta-ink);
+  background: #faf7ed;
+  box-shadow: 0.18rem 0.18rem 0 var(--ta-shadow);
+}
+
+.ta-compact-card:hover:not([data-disabled="true"]) {
+  border-color: var(--ta-ink);
+  background: #ffffff;
+  outline: 0.15rem solid var(--ta-ink);
+  outline-offset: 0.08rem;
+}
+
+.ta-compact-card:active:not([data-disabled="true"]) {
+  transform: translate(0.08rem, 0.08rem);
+  box-shadow: 0.08rem 0.08rem 0 var(--ta-shadow);
+}
+
+.ta-compact-card[data-disabled="true"] {
+  cursor: not-allowed;
+  opacity: 0.75;
+}
+
+.ta-compact-card[data-enabled="false"] {
+  opacity: 0.6;
+  background: #e3dcce;
+  border-color: rgb(18 16 14 / 0.45);
+}
+
+.ta-compact-card[data-enabled="false"]:hover:not([data-disabled="true"]) {
+  opacity: 0.95;
+  background: #f7f3e8;
+  border-color: var(--ta-ink);
+}
+
+.ta-compact-card-art {
+  display: grid;
+  place-items: center;
+  width: 2.25rem;
+  height: 2.25rem;
+  flex-shrink: 0;
+  border: 2px solid var(--ta-ink);
+  background: #ffffff;
+  padding: 2px;
+  box-shadow: 0.08rem 0.08rem 0 var(--ta-shadow);
+}
+
+.ta-compact-info-btn {
+  display: inline-grid;
+  place-items: center;
+  width: 1.6rem;
+  height: 1.6rem;
+  border-radius: 999px;
+  border: 2px solid var(--ta-ink);
+  background: var(--ta-paper);
+  color: var(--ta-ink);
+  font-family: "Triple Fyodor", Georgia, serif;
+  font-size: 0.8rem;
+  font-weight: bold;
+  line-height: 1;
+  transition: all 120ms ease;
+  flex-shrink: 0;
+}
+
+.ta-compact-info-btn:hover {
+  background: var(--ta-ink);
+  color: var(--ta-paper);
+  transform: scale(1.1);
+}
+
+.ta-compact-status-badge {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 2.75rem;
+  padding: 0.25rem 0.5rem;
+  border: 2px solid var(--ta-ink);
+  font-family: "Triple Condensed", "Arial Narrow", Arial, sans-serif;
+  font-size: 0.7rem;
+  font-weight: bold;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  transition: all 120ms ease;
+  flex-shrink: 0;
+}
+
+.ta-compact-status-badge.ta-badge-enabled {
+  background: var(--ta-teal);
+  color: var(--ta-ink);
+  box-shadow: 0.12rem 0.12rem 0 var(--ta-shadow);
+}
+
+.ta-compact-status-badge.ta-badge-disabled {
+  background: rgb(18 16 14 / 0.15);
+  color: rgb(18 16 14 / 0.65);
+  border-color: rgb(18 16 14 / 0.45);
+}
+
+.ta-modal-portal-backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 9999;
+  display: grid;
+  place-items: center;
+  padding: 1rem;
+  background: rgb(18 16 14 / 0.72);
+  backdrop-filter: blur(2px);
 }
 
 .ta-secondary-button {
