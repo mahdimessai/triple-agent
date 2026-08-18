@@ -87,7 +87,7 @@ type InspectedItem =
     }
   | {
       type: "role";
-      role: (typeof roleCatalog)[number];
+      role: RoleDefinition;
       enabled: boolean;
       disabled: boolean;
     }
@@ -177,11 +177,11 @@ const CompactRoleCard = memo(function CompactRoleCard({
   onToggle,
   onInspect,
 }: {
-  role: (typeof roleCatalog)[number];
+  role: RoleDefinition;
   enabled: boolean;
   disabled: boolean;
   onToggle: ToggleHandler;
-  onInspect: (role: (typeof roleCatalog)[number], enabled: boolean, disabled: boolean) => void;
+  onInspect: (role: RoleDefinition, enabled: boolean, disabled: boolean) => void;
 }) {
   const handleInspectClick = useCallback(
     (e: React.MouseEvent) => {
