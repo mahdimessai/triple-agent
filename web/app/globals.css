@@ -818,7 +818,6 @@ button.ta-header-brand:active {
   display: grid;
   place-items: center;
   padding: 1rem;
-  background: rgb(18 16 14 / 0.62);
 }
 
 .ta-join-dialog {
