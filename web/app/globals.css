@@ -25,6 +25,13 @@
 }
 
 @font-face {
+  font-family: "Triple Sans";
+  src: url("/triple-agent/fonts/NotoSansRegular.ttf") format("truetype");
+  font-weight: 400;
+  font-display: swap;
+}
+
+@font-face {
   font-family: "Triple Condensed";
   src: url("/triple-agent/fonts/RobotoCondensedBold.ttf") format("truetype");
   font-display: swap;
@@ -40,6 +47,7 @@
   --color-ta-blue: #224c51;
   --color-ta-teal: #51d3c2;
   --color-ta-shadow: #0a0807;
+  --color-ta-gold: #d9a325;
 }
 
 :root {
@@ -52,6 +60,7 @@
   --ta-blue: var(--color-ta-blue);
   --ta-teal: var(--color-ta-teal);
   --ta-shadow: var(--color-ta-shadow);
+  --ta-gold: var(--color-ta-gold);
 }
 
 * {
@@ -69,6 +78,10 @@ body {
   background: #17120f;
   color: var(--ta-ink);
   font-family: "Triple Body", "Arial Narrow", Arial, sans-serif;
+  /* Every custom face here ships as a single, already-bold file. Letting the
+     browser fake a heavier weight on top of them is what made labels and card
+     names read as smeared blobs, so synthesis is off everywhere. */
+  font-synthesis: none;
 }
 
 button,
@@ -695,6 +708,23 @@ button.ta-header-brand:active {
 
 .ta-condensed {
   font-family: "Triple Condensed", "Arial Narrow", Arial, sans-serif;
+  font-weight: 400;
+}
+
+/* Card and roster names: narrow enough to stay on one line where the bold
+   condensed face used to, but drawn at a single regular weight. */
+.ta-narrow {
+  font-family: "Triple Condensed", "Arial Narrow", Arial, sans-serif;
+  font-weight: 400;
+  letter-spacing: 0.04em;
+}
+
+/* The lighter voice: names, briefs, hints and counters that used to be set in
+   the bold condensed face and were doing too much shouting. */
+.ta-sans {
+  font-family: "Triple Sans", "Helvetica Neue", Arial, sans-serif;
+  font-weight: 400;
+  letter-spacing: 0.005em;
 }
 
 .ta-ink-button {
@@ -871,6 +901,55 @@ button.ta-header-brand:active {
   font-size: 0.9rem;
   letter-spacing: 0.08em;
   text-transform: uppercase;
+}
+
+/* The host marker is the same crown as the promote control, minus the button box,
+   so the badge and the action read as the same idea. */
+.ta-roster-host {
+  display: grid;
+  place-items: center;
+  color: var(--ta-gold);
+  /* A dark hairline keeps the gold from dissolving into the paper. */
+  filter: drop-shadow(0 0 0.5px rgb(18 16 14 / 0.85));
+}
+
+/* Square glyph controls sized to survive the narrowest roster row. */
+.ta-roster-action {
+  display: grid;
+  /* Matched to the status badge's height so a row with host controls is exactly
+     as tall as one without: the roster never changes height seat to seat. */
+  width: 1.6rem;
+  height: 1.6rem;
+  flex: 0 0 auto;
+  place-items: center;
+  border: 2px solid var(--ta-ink);
+  background: var(--ta-paper-soft);
+  color: var(--ta-ink);
+  transition: background 120ms ease, transform 120ms ease;
+}
+
+.ta-roster-action:hover:not(:disabled),
+.ta-roster-action:focus-visible:not(:disabled) {
+  background: var(--ta-teal);
+}
+
+.ta-roster-action--kick {
+  background: var(--ta-orange-deep);
+  color: var(--ta-paper);
+}
+
+.ta-roster-action--kick:hover:not(:disabled),
+.ta-roster-action--kick:focus-visible:not(:disabled) {
+  background: var(--ta-red);
+  color: var(--ta-paper);
+}
+
+.ta-roster-action:active:not(:disabled) {
+  transform: translate(0.08rem, 0.08rem);
+}
+
+.ta-roster-action:disabled {
+  opacity: 0.45;
 }
 
 .ta-ready-badge {
@@ -1133,7 +1212,6 @@ button.ta-header-brand:active {
   color: var(--ta-ink);
   font-family: "Triple Fyodor", Georgia, serif;
   font-size: 0.8rem;
-  font-weight: bold;
   line-height: 1;
   transition: all 120ms ease;
   flex-shrink: 0;
@@ -1154,7 +1232,6 @@ button.ta-header-brand:active {
   border: 2px solid var(--ta-ink);
   font-family: "Triple Condensed", "Arial Narrow", Arial, sans-serif;
   font-size: 0.7rem;
-  font-weight: bold;
   letter-spacing: 0.1em;
   text-transform: uppercase;
   transition: all 120ms ease;
@@ -1186,6 +1263,66 @@ button.ta-header-brand:active {
 
 .ta-secondary-button {
   padding: 0 1.25rem;
+}
+
+/* The primary invite action: flat teal, no border, just the pulp drop shadow. */
+.ta-share-button {
+  display: flex;
+  width: 100%;
+  min-height: 3rem;
+  align-items: center;
+  justify-content: center;
+  gap: 0.6rem;
+  border: 0;
+  background: var(--ta-teal);
+  color: var(--ta-ink);
+  box-shadow: 0.3rem 0.3rem 0 var(--ta-shadow);
+  font-family: "Triple Condensed", "Arial Narrow", Arial, sans-serif;
+  font-size: 1rem;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  transition: transform 160ms ease, box-shadow 160ms ease, background 160ms ease;
+}
+
+.ta-share-button:hover,
+.ta-share-button:focus-visible {
+  background: #6ce0d1;
+}
+
+.ta-share-button:active {
+  transform: translate(0.2rem, 0.2rem);
+  box-shadow: 0.1rem 0.1rem 0 var(--ta-shadow);
+}
+
+/* No button chrome around the room code: the clipboard glyph next to the code
+   is the whole affordance, sized to stay a comfortable tap target. */
+.ta-copy-code {
+  display: inline-flex;
+  flex: 0 0 auto;
+  align-items: center;
+  gap: 0.35rem;
+  min-height: 2.25rem;
+  padding: 0 0.15rem;
+  border: 0;
+  background: transparent;
+  color: rgb(18 16 14 / 0.72);
+  text-transform: uppercase;
+  transition: color 120ms ease, transform 120ms ease;
+}
+
+.ta-copy-code:hover,
+.ta-copy-code:focus-visible {
+  color: var(--ta-ink);
+  transform: translateY(-0.08rem);
+}
+
+.ta-copy-code:focus-visible {
+  outline: 0.16rem solid rgb(18 16 14 / 0.55);
+  outline-offset: 0.1rem;
+}
+
+.ta-copy-code:active {
+  transform: translateY(0.06rem);
 }
 
 .ta-status-toggle {
@@ -1342,16 +1479,6 @@ button.ta-header-brand:active {
 
   .ta-screen > .flex.items-center.justify-between > .ta-ink-button {
     width: 100%;
-  }
-
-  .ta-screen--lobby .ta-paper.flex.items-center.justify-between {
-    align-items: flex-start;
-    flex-wrap: wrap;
-    gap: 0.75rem;
-  }
-
-  .ta-screen--lobby .ta-paper.flex.items-center.justify-between > .ta-ready-badge {
-    margin-left: auto;
   }
 
   .ta-screen--settings .ta-paper > .flex.items-center.justify-between {

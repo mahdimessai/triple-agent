@@ -11,7 +11,7 @@
     "start": "npm run start --workspace triple-agent-web",
     "lint": "npm run lint --workspace triple-agent-web",
     "typecheck": "npm run typecheck --workspace triple-agent-web",
-    "server:dev": "go run ./server/cmd/server",
+    "server:dev": "go run ./server/cmd/tripleagent",
     "server:test": "go test ./server/...",
     "up": "docker compose up --build",
     "down": "docker compose down"
