@@ -266,17 +266,6 @@ export function Game() {
       settingsOpen={settingsOpen}
       onToggleSettings={() => setSettingsRoomId(settingsOpen ? null : room.identity?.room_id ?? null)}
       onLeave={handleLeave}
-      onHome={() => {
-        if (settingsOpen) {
-          setSettingsRoomId(null);
-          return;
-        }
-        if (projection.public.phase === "LOBBY") {
-          if (window.confirm("Leave this lobby? Your seat will be given up.")) {
-            handleLeave();
-          }
-        }
-      }}
     >
       {content}
     </GameShell>

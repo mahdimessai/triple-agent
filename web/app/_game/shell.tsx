@@ -34,7 +34,6 @@ export function GameShell({
   settingsOpen,
   onToggleSettings,
   onLeave,
-  onHome,
   children,
 }: GameShellProps) {
   const connection = connectionText(status);
@@ -52,14 +51,12 @@ export function GameShell({
           <div className="ta-header-inner">
             <div className="flex min-w-0 items-center gap-3">
               {isPreGame ? (
-                <button
-                  type="button"
-                  onClick={onHome ?? onLeave}
-                  className="ta-header-brand cursor-pointer"
+                <h1
+                  className="ta-header-brand"
                   aria-label="Return to main menu"
                 >
                   Triple Agent
-                </button>
+                </h1>
               ) : (
                 <div className="min-w-0">
                   <p className="ta-display truncate text-2xl">Triple Agent</p>
