@@ -2,6 +2,7 @@ package room
 
 import (
 	"crypto/rand"
+	"encoding/binary"
 	"encoding/hex"
 	"strings"
 )
@@ -24,6 +25,14 @@ func randomHex(size int) string {
 		panic(err)
 	}
 	return hex.EncodeToString(bytes)
+}
+
+func randomUint64() uint64 {
+	var bytes [8]byte
+	if _, err := rand.Read(bytes[:]); err != nil {
+		panic(err)
+	}
+	return binary.LittleEndian.Uint64(bytes[:])
 }
 
 func codeKey(code string) string { return strings.ToUpper(strings.TrimSpace(code)) }

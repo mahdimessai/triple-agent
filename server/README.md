@@ -31,7 +31,8 @@ Creating a room:
 POST /api/lobbies
   -> httpapi.createLobby
   -> room.Registry.Create
-  -> game.NewLobby
+  -> crypto/rand game seed
+  -> game.NewLobbyWithSeed
   -> room actor starts
 ```
 
@@ -66,14 +67,15 @@ WebSocket command
 | --- | --- | --- |
 | 1 | `cmd/tripleagent/main.go` | process wiring, configuration, graceful shutdown |
 | 2 | `internal/httpapi/server.go` | public HTTP/WS surface and error mapping |
-| 3 | `internal/httpapi/websocket.go` | realtime wire protocol |
-| 4 | `internal/room/doc.go` + `room.go` | single-goroutine room actor |
-| 5 | `internal/game/doc.go` + `state.go` | authoritative game model |
-| 6 | `internal/game/apply.go` | command/state-machine surface |
-| 7 | `internal/game/projection.go` | public/private information boundary |
-| 8 | `internal/game/operations.go` | operation catalog and mechanics |
-| 9 | `internal/game/roles.go`, `results.go` | roles, voting, outcomes |
-| 10 | tests | executable contracts and examples |
+| 3 | `internal/httpapi/websocket.go` | realtime protocol and room-session bridge |
+| 4 | `internal/httpapi/connection.go` | single-writer WebSocket loop and backpressure |
+| 5 | `internal/room/doc.go` + `room.go` | single-goroutine room actor |
+| 6 | `internal/game/doc.go` + `state.go` | authoritative game model |
+| 7 | `internal/game/apply.go` | command/state-machine surface |
+| 8 | `internal/game/projection.go` | public/private information boundary |
+| 9 | `internal/game/operations.go` | operation catalog and mechanics |
+| 10 | `internal/game/roles.go`, `results.go` | roles, voting, outcomes |
+| 11 | tests | executable contracts and examples |
 
 ## Core invariants
 
@@ -92,6 +94,7 @@ WebSocket command
 - Failed transitions must not partially mutate the authoritative state.
 - State versions only advance for observable state changes.
 - Randomness lives in game state so tests can use deterministic seeds.
+- Production room creation seeds that deterministic PRNG from `crypto/rand`, not the clock.
 
 ### Information security
 
