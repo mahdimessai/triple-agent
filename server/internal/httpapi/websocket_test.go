@@ -74,7 +74,9 @@ func TestWebSocketAuthenticationCommandAndProjectionContract(t *testing.T) {
 		if err != nil {
 			t.Fatal(err)
 		}
-		var header struct{ Type string `json:"type"` }
+		var header struct {
+			Type string `json:"type"`
+		}
 		if err := json.Unmarshal(payload, &header); err != nil {
 			t.Fatal(err)
 		}

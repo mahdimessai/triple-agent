@@ -1,10 +1,11 @@
 "use client";
 
-import { useEffect, useRef, useState, type ReactNode } from "react";
+import { useState, type ReactNode } from "react";
 import { useRoom } from "./use-room";
+import { useRoomInvite } from "./invite/use-room-invite";
 import { GameShell } from "./shell";
 import type { RoomProjection } from "./protocol";
-import { TitleScreen, type EntryMode, type RoomInvite } from "./screens/title";
+import { TitleScreen, type EntryMode } from "./screens/title";
 import { LobbyScreen } from "./screens/lobby";
 import { SettingsScreen } from "./screens/settings";
 import { RoleScreen } from "./screens/role";
@@ -50,146 +51,27 @@ function renderPhase(projection: RoomProjection, room: ReturnType<typeof useRoom
 
 export function Game() {
   const room = useRoom();
+  const roomInvite = useRoomInvite(room.identity, room.projection);
   const [entryMode, setEntryMode] = useState<EntryMode>("create");
   const [playerName, setPlayerName] = useState("");
   const [joinCode, setJoinCode] = useState("");
   const [settingsRoomId, setSettingsRoomId] = useState<string | null>(null);
-  const [copiedRoomCode, setCopiedRoomCode] = useState(false);
-  const [linkShared, setLinkShared] = useState(false);
-  const [invite, setInvite] = useState<RoomInvite | null>(null);
-  const shareTimerRef = useRef<number | null>(null);
-  const [copyError, setCopyError] = useState<string | null>(null);
-  const copyTimerRef = useRef<number | null>(null);
 
   const settingsOpen = Boolean(room.identity && settingsRoomId === room.identity.room_id);
   const visibleEntryMode = room.notice?.kind === "kicked" ? "join" : entryMode;
-  const visibleJoinCode = room.notice?.kind === "kicked" ? room.notice.joinCode : joinCode;
-
-  useEffect(() => () => {
-    if (copyTimerRef.current !== null) window.clearTimeout(copyTimerRef.current);
-    if (shareTimerRef.current !== null) window.clearTimeout(shareTimerRef.current);
-  }, []);
-
-  /* Arriving on an invite link: the code comes from the URL and is never shown as a
-     form to fill in. The host name is display-only text supplied by whoever shared
-     the link, so it is sanitised and length-capped before it reaches the screen. */
-  useEffect(() => {
-    const params = new URLSearchParams(window.location.search);
-    const code = (params.get("join") ?? "").toUpperCase().replace(/[^A-Z0-9]/g, "").slice(0, 6);
-    if (code.length !== 6) return;
-    const host = (params.get("host") ?? "").replace(/[^\p{L}\p{N} '._-]/gu, "").trim().slice(0, 24);
-    setJoinCode(code);
-    setInvite({ code, host: host || undefined });
-  }, []);
+  const visibleJoinCode = room.notice?.kind === "kicked"
+    ? room.notice.joinCode
+    : roomInvite.invite?.code ?? joinCode;
 
   function dismissInvite(): void {
-    setInvite(null);
+    roomInvite.dismissInvite();
     setJoinCode("");
     setEntryMode("create");
-    window.history.replaceState(null, "", window.location.pathname);
-  }
-
-  /* The async clipboard API is not only sometimes absent, it also rejects when
-     the document is not focused or the permission is denied. Both cases have to
-     fall through to the selection-based copy, or the button reports failure for
-     a copy the browser would happily have made. */
-  function legacyCopy(code: string): boolean {
-    try {
-      const input = document.createElement("textarea");
-      input.value = code;
-      input.setAttribute("readonly", "true");
-      input.style.position = "fixed";
-      input.style.opacity = "0";
-      document.body.appendChild(input);
-      input.select();
-      const copied = document.execCommand("copy");
-      input.remove();
-      return copied;
-    } catch {
-      return false;
-    }
-  }
-
-  async function copyRoomCode(): Promise<void> {
-    const code = room.identity?.join_code;
-    if (!code) return;
-
-    let copied = false;
-    if (navigator.clipboard?.writeText) {
-      try {
-        await navigator.clipboard.writeText(code);
-        copied = true;
-      } catch {
-        copied = false;
-      }
-    }
-    if (!copied) copied = legacyCopy(code);
-
-    if (!copied) {
-      setCopiedRoomCode(false);
-      setCopyError("Could not copy the room code");
-      return;
-    }
-
-    setCopyError(null);
-    setCopiedRoomCode(true);
-    if (copyTimerRef.current !== null) window.clearTimeout(copyTimerRef.current);
-    copyTimerRef.current = window.setTimeout(() => {
-      copyTimerRef.current = null;
-      setCopiedRoomCode(false);
-    }, 1600);
-  }
-
-  function inviteUrl(code: string): string {
-    const me = room.projection?.public.players.find((player) => player.id === room.projection?.private.player_id);
-    const host = me?.name ? `&host=${encodeURIComponent(me.name)}` : "";
-    return `${window.location.origin}${window.location.pathname}?join=${code}${host}`;
-  }
-
-  /* Where the platform offers a share sheet the link goes straight into it;
-     everywhere else the fallback is to copy the link and say so on the button. */
-  async function shareRoomLink(): Promise<void> {
-    const code = room.identity?.join_code;
-    if (!code) return;
-    const url = inviteUrl(code);
-
-    if (navigator.share) {
-      try {
-        await navigator.share({ title: "Triple Agent", text: `Join my Triple Agent room: ${code}`, url });
-        return;
-      } catch {
-        // A cancelled or unavailable share sheet falls through to copying.
-      }
-    }
-
-    let copied = false;
-    if (navigator.clipboard?.writeText) {
-      try {
-        await navigator.clipboard.writeText(url);
-        copied = true;
-      } catch {
-        copied = false;
-      }
-    }
-    if (!copied) copied = legacyCopy(url);
-
-    if (!copied) {
-      setCopyError("Could not copy the invite link");
-      return;
-    }
-    setCopyError(null);
-    setLinkShared(true);
-    if (shareTimerRef.current !== null) window.clearTimeout(shareTimerRef.current);
-    shareTimerRef.current = window.setTimeout(() => {
-      shareTimerRef.current = null;
-      setLinkShared(false);
-    }, 1600);
   }
 
   function handleLeave() {
     const code = room.identity?.join_code ?? "";
-    setCopyError(null);
-    setCopiedRoomCode(false);
+    roomInvite.resetFeedback();
     void room.leave().then(() => {
       setJoinCode(code);
       setEntryMode("join");
@@ -205,19 +87,17 @@ export function Game() {
         busy={room.status === "connecting" || room.status === "reconnecting" || room.status === "leaving"}
         error={room.error}
         notice={room.notice}
-        invite={invite}
+        invite={roomInvite.invite}
         onDismissInvite={dismissInvite}
         onModeChange={setEntryMode}
         onPlayerNameChange={setPlayerName}
         onJoinCodeChange={setJoinCode}
         onCreate={() => {
-          setCopyError(null);
-          setCopiedRoomCode(false);
+          roomInvite.resetFeedback();
           void room.create(playerName);
         }}
         onJoin={() => {
-          setCopyError(null);
-          setCopiedRoomCode(false);
+          roomInvite.resetFeedback();
           void room.join(visibleJoinCode, playerName);
         }}
         onDismissNotice={() => {
@@ -232,10 +112,9 @@ export function Game() {
   }
 
   const projection = room.projection;
-  /* Errors are reported next to whatever the player just touched. The shell
-     banner is only the fallback for phases that have no inline slot, so an
-     error never shows up twice. */
-  const roomError = room.error ?? copyError;
+  // Errors are reported next to whatever the player just touched. The shell
+  // banner is only the fallback for phases that have no inline slot.
+  const roomError = room.error ?? roomInvite.error;
   const errorShownInline = projection.public.phase === "LOBBY" && !settingsOpen;
   let content: ReactNode;
   if (settingsOpen) {
@@ -245,12 +124,12 @@ export function Game() {
       <LobbyScreen
         projection={projection}
         joinCode={room.identity?.join_code ?? ""}
-        copied={copiedRoomCode}
+        copied={roomInvite.copiedRoomCode}
         pending={room.pending}
         onSend={room.send}
-        onCopyRoomCode={() => void copyRoomCode()}
-        onShareLink={() => void shareRoomLink()}
-        linkShared={linkShared}
+        onCopyRoomCode={() => void roomInvite.copyRoomCode()}
+        onShareLink={() => void roomInvite.shareRoomLink()}
+        linkShared={roomInvite.linkShared}
         error={roomError}
       />
     );
