@@ -64,8 +64,11 @@ export function useRoomInvite({
     const code = (params.get("join") ?? "").toUpperCase().replace(/[^A-Z0-9]/g, "").slice(0, 6);
     if (code.length !== 6) return;
     const host = (params.get("host") ?? "").replace(/[^\p{L}\p{N} '._-]/gu, "").trim().slice(0, 24);
-    setJoinCode(code);
-    setInvite({ code, host: host || undefined });
+    const syncTimer = window.setTimeout(() => {
+      setJoinCode(code);
+      setInvite({ code, host: host || undefined });
+    }, 0);
+    return () => window.clearTimeout(syncTimer);
   }, [setJoinCode]);
 
   function resetFeedback(): void {
