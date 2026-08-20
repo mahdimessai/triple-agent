@@ -4,6 +4,9 @@ on:
   push:
     branches:
       - chatgpt/triple-agent-refactor-20260820
+  pull_request:
+    branches:
+      - mahdi
   workflow_dispatch:
 
 permissions:
