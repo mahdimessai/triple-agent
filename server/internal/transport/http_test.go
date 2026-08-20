@@ -255,7 +255,7 @@ func TestJoinLobbySeatsPlayerAndAuthenticates(t *testing.T) {
 	if len(projection.Public.Players) != 2 {
 		t.Fatalf("expected 2 players in room, got: %#v", projection.Public.Players)
 	}
-	if err := store.ValidateReconnectToken(string(created.RoomID), string(joined.PlayerID), joined.ReconnectToken); err != nil {
+	if err := active.Authenticate(string(joined.PlayerID), joined.ReconnectToken); err != nil {
 		t.Fatal("server token did not authenticate:", err)
 	}
 }
@@ -579,7 +579,6 @@ func TestWebSocketDiscussionTimerConfiguration(t *testing.T) {
 
 	initial := authenticateConnection(t, connection, lobbyResponse.ReconnectToken)
 
-	// Configure discussion timer to 420 seconds
 	if err := connection.WriteJSON(map[string]any{
 		"kind":                     domain.CommandSetDiscussionTimer,
 		"request_id":               "req-timer-1",
