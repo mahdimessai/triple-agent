@@ -9,32 +9,45 @@ import (
 )
 
 type Room struct {
-	// commands is the actor mailbox; all room state changes pass through it.
+	// commands is the actor mailbox; all room runtime changes pass through it.
 	commands chan roomMessage
-	// done closes when the room stops accepting work or its actor exits.
+	// done closes when the room stops accepting work.
 	done chan struct{}
-	// closeOnce makes room shutdown safe when expiry and explicit removal race.
+	// closeOnce makes room shutdown safe across competing retirement paths.
 	closeOnce sync.Once
 	// lifetime is the normal idle/lobby lifetime before the room expires.
 	lifetime time.Duration
 	// endedAfter is the shorter lifetime retained after a match reaches its end.
 	endedAfter time.Duration
-	// onExpire removes the room from its manager when the lifetime timer fires.
-	onExpire func()
-	// cleanup releases whatever outlives the actor - the join code and the
-	// credentials - and runs however the room ends.
+	// retire removes this exact room instance from its manager and runs cleanup.
+	retire func()
+	// cleanup is retained so explicit manager removal uses the same lifecycle hook.
 	cleanup func()
 }
 
-func newRoom(state domain.GameState, lifetime, endedAfter time.Duration, onExpire func()) *Room {
+type runtimeState struct {
+	game        domain.GameState
+	sessions    map[string]roomSession
+	credentials map[string]string
+	dedupe      map[string]dedupeEntry
+	dedupeOrder []string
+}
+
+// newRoom keeps tests and low-level callers simple when reconnect credentials
+// are irrelevant.
+func newRoom(state domain.GameState, lifetime, endedAfter time.Duration, retire func()) *Room {
+	return newRoomWithCredentials(state, nil, lifetime, endedAfter, retire)
+}
+
+func newRoomWithCredentials(state domain.GameState, credentials map[string]string, lifetime, endedAfter time.Duration, retire func()) *Room {
 	room := &Room{
 		commands:   make(chan roomMessage),
 		done:       make(chan struct{}),
 		lifetime:   lifetime,
 		endedAfter: endedAfter,
-		onExpire:   onExpire,
+		retire:     retire,
 	}
-	go room.loop(state)
+	go room.loop(state, cloneCredentials(credentials))
 	return room
 }
 
@@ -42,18 +55,29 @@ func (r *Room) Close() {
 	r.closeOnce.Do(func() { close(r.done) })
 }
 
-func (r *Room) loop(state domain.GameState) {
-	sessions := make(map[string]roomSession)
-	dedupe := make(map[string]dedupeEntry)
-	dedupeOrder := make([]string, 0, maxDedupeEntries)
+func (r *Room) retireNow() {
+	if r.retire != nil {
+		r.retire()
+	}
+	r.Close()
+}
+
+func (r *Room) loop(state domain.GameState, credentials map[string]string) {
+	runtime := runtimeState{
+		game:        state,
+		sessions:    make(map[string]roomSession),
+		credentials: credentials,
+		dedupe:      make(map[string]dedupeEntry),
+		dedupeOrder: make([]string, 0, maxDedupeEntries),
+	}
 
 	timers := newRoomTimers(r)
-	timers.resetDiscussion(state)
+	timers.resetDiscussion(runtime.game)
 
 	defer func() {
 		timers.stopDiscussion()
 		timers.stopExpiry()
-		for _, session := range sessions {
+		for _, session := range runtime.sessions {
 			if session.close != nil {
 				session.close()
 			}
@@ -64,147 +88,178 @@ func (r *Room) loop(state domain.GameState) {
 		select {
 		case <-r.done:
 			return
+
 		case <-timers.expiryC:
-			if r.onExpire != nil {
-				r.onExpire()
-			}
-			r.Close()
+			r.retireNow()
 			return
+
 		case <-timers.discussionC:
-			if (state.Phase == domain.PhaseDiscussion || state.Phase == domain.PhaseOperationInterlude) && state.DiscussionDeadline != nil && !time.Now().UTC().Before(*state.DiscussionDeadline) {
+			if (runtime.game.Phase == domain.PhaseDiscussion || runtime.game.Phase == domain.PhaseOperationInterlude) && runtime.game.DiscussionDeadline != nil && !time.Now().UTC().Before(*runtime.game.DiscussionDeadline) {
 				kind := domain.CommandAdvanceDiscussion
-				if state.Phase == domain.PhaseOperationInterlude {
+				if runtime.game.Phase == domain.PhaseOperationInterlude {
 					kind = domain.CommandAdvanceInterlude
 				}
 				command := domain.Command{
-					ActorID:         state.HostID,
-					ExpectedVersion: state.Version,
+					ActorID:         runtime.game.HostID,
+					ExpectedVersion: runtime.game.Version,
 					Kind:            kind,
 				}
-				transition, err := domain.Apply(state, command, time.Now().UTC())
+				transition, err := domain.Apply(runtime.game, command, time.Now().UTC())
 				if err == nil {
-					state = transition.State
-					r.broadcast(&state, sessions)
+					runtime.game = transition.State
+					pruneCredentials(runtime.credentials, runtime.game)
+					if r.broadcast(&runtime) {
+						r.retireNow()
+						return
+					}
 				}
 			}
-			timers.resetDiscussion(state)
+			timers.resetDiscussion(runtime.game)
+
 		case message := <-r.commands:
 			switch message.kind {
-			case "add_player":
-				transition, err := domain.ApplyJoin(state, message.playerID, message.name, time.Now().UTC())
-				if err == nil && message.commit != nil {
-					err = message.commit(transition.State)
-				}
-				if message.reply != nil {
-					message.reply <- roomResponse{err: err}
-				}
+			case messageAddPlayer:
+				transition, err := domain.ApplyJoin(runtime.game, message.playerID, message.name, time.Now().UTC())
 				if err != nil {
+					message.reply <- roomResponse{err: err}
 					continue
 				}
-				// A replayed join finds its seat already taken and changes
-				// nothing, so there is no new state to publish.
 				if transition.Changed {
-					state = transition.State
-					r.broadcast(&state, sessions)
+					runtime.game = transition.State
+				}
+				if message.token != "" {
+					runtime.credentials[message.playerID] = message.token
+				}
+				message.reply <- roomResponse{}
+				if transition.Changed && r.broadcast(&runtime) {
+					r.retireNow()
+					return
 				}
 				timers.resetExpiry(r.lifetime)
 
-			case "attach":
-				r.handleAttach(&state, sessions, message)
-
-			case "detach":
-				r.handleDetach(&state, sessions, message)
-
-			case "remove_player":
-				transition, err := domain.ApplyLeave(state, message.playerID, time.Now().UTC())
-				if err == nil && message.commit != nil {
-					err = message.commit(transition.State)
+			case messageAuthenticate:
+				if _, exists := runtime.game.Players[message.playerID]; !exists || !validCredential(runtime.credentials, message.playerID, message.token) {
+					message.reply <- roomResponse{err: ErrInvalidCredential}
+					continue
 				}
+				message.reply <- roomResponse{}
+
+			case messageAttach:
+				if r.handleAttach(&runtime, message) {
+					r.retireNow()
+					return
+				}
+
+			case messageDetach:
+				if r.handleDetach(&runtime, message) {
+					r.retireNow()
+					return
+				}
+
+			case messageRemovePlayer:
+				transition, err := domain.ApplyLeave(runtime.game, message.playerID, time.Now().UTC())
 				if err != nil {
 					message.reply <- roomResponse{err: err}
 					continue
 				}
-				state = transition.State
-				if session, exists := sessions[message.playerID]; exists {
-					delete(sessions, message.playerID)
+				runtime.game = transition.State
+				delete(runtime.credentials, message.playerID)
+				if session, exists := runtime.sessions[message.playerID]; exists {
+					delete(runtime.sessions, message.playerID)
 					if session.close != nil {
 						session.close()
 					}
 				}
-				r.broadcast(&state, sessions)
-				message.reply <- roomResponse{reply: roomReply{state: state}}
+				retire := len(runtime.game.PlayerOrder) == 0
+				if !retire {
+					retire = r.broadcast(&runtime)
+				}
+				message.reply <- roomResponse{}
 				timers.resetExpiry(r.lifetime)
+				if retire {
+					r.retireNow()
+					return
+				}
 
-			case "snapshot":
-				if _, ok := state.Players[message.playerID]; !ok {
+			case messageSnapshot:
+				if _, ok := runtime.game.Players[message.playerID]; !ok {
 					message.reply <- roomResponse{err: domain.ErrPlayerNotInRoom}
 					continue
 				}
-				message.reply <- roomResponse{reply: roomReply{projection: domain.Project(state, message.playerID)}}
+				message.reply <- roomResponse{reply: roomReply{projection: domain.Project(runtime.game, message.playerID)}}
 
-			case "command":
+			case messageCommand:
 				command := *message.command
 				if message.sessionID != "" {
-					current, exists := sessions[command.ActorID]
+					current, exists := runtime.sessions[command.ActorID]
 					if !exists || current.id != message.sessionID {
 						message.reply <- roomResponse{err: errors.New("session is no longer active")}
 						continue
 					}
 				}
+
 				if command.RequestID != "" {
-					if entry, exists := dedupe[command.RequestID]; exists {
+					if entry, exists := runtime.dedupe[command.RequestID]; exists {
 						if entry.actorID != command.ActorID {
 							message.reply <- roomResponse{err: errors.New("request id already used by another player")}
 						} else {
 							message.reply <- roomResponse{
-								reply: roomReply{projection: domain.Project(state, command.ActorID), replayed: entry.err == nil},
+								reply: roomReply{projection: domain.Project(runtime.game, command.ActorID), replayed: entry.err == nil},
 								err:   entry.err,
 							}
 						}
 						continue
 					}
 				}
-				transition, err := domain.Apply(state, command, time.Now().UTC())
+
+				transition, err := domain.Apply(runtime.game, command, time.Now().UTC())
 				if err != nil {
 					if command.RequestID != "" {
-						dedupe, dedupeOrder = rememberDedupe(dedupe, dedupeOrder, command.RequestID, dedupeEntry{actorID: command.ActorID, err: err})
+						runtime.dedupe, runtime.dedupeOrder = rememberDedupe(runtime.dedupe, runtime.dedupeOrder, command.RequestID, dedupeEntry{actorID: command.ActorID, err: err})
 					}
 					message.reply <- roomResponse{err: err}
 					continue
 				}
+
 				if !transition.Changed {
-					projection := domain.Project(state, command.ActorID)
+					projection := domain.Project(runtime.game, command.ActorID)
 					if command.RequestID != "" {
-						dedupe, dedupeOrder = rememberDedupe(dedupe, dedupeOrder, command.RequestID, dedupeEntry{actorID: command.ActorID, projection: projection})
+						runtime.dedupe, runtime.dedupeOrder = rememberDedupe(runtime.dedupe, runtime.dedupeOrder, command.RequestID, dedupeEntry{actorID: command.ActorID, projection: projection})
 					}
 					message.reply <- roomResponse{reply: roomReply{projection: projection}}
 					continue
 				}
 
-				state = transition.State
+				runtime.game = transition.State
 				if command.Kind == domain.CommandRematch {
-					dedupe = make(map[string]dedupeEntry)
-					dedupeOrder = dedupeOrder[:0]
+					runtime.dedupe = make(map[string]dedupeEntry)
+					runtime.dedupeOrder = runtime.dedupeOrder[:0]
 				}
-				for playerID, session := range sessions {
-					if _, exists := state.Players[playerID]; !exists {
-						delete(sessions, playerID)
+				pruneCredentials(runtime.credentials, runtime.game)
+				for playerID, session := range runtime.sessions {
+					if _, exists := runtime.game.Players[playerID]; !exists {
+						delete(runtime.sessions, playerID)
 						if session.close != nil {
 							session.close()
 						}
 					}
 				}
-				projection := domain.Project(state, command.ActorID)
+
+				projection := domain.Project(runtime.game, command.ActorID)
 				if command.RequestID != "" {
-					dedupe, dedupeOrder = rememberDedupe(dedupe, dedupeOrder, command.RequestID, dedupeEntry{actorID: command.ActorID, projection: projection})
+					runtime.dedupe, runtime.dedupeOrder = rememberDedupe(runtime.dedupe, runtime.dedupeOrder, command.RequestID, dedupeEntry{actorID: command.ActorID, projection: projection})
 				}
-				r.broadcast(&state, sessions)
+				retire := r.broadcast(&runtime)
 				message.reply <- roomResponse{reply: roomReply{projection: projection}}
-				timers.resetDiscussion(state)
-				if state.Phase == domain.PhaseEnd {
+				timers.resetDiscussion(runtime.game)
+				if runtime.game.Phase == domain.PhaseEnd {
 					timers.resetExpiry(r.endedAfter)
 				} else if command.Kind == domain.CommandRematch || command.Kind == domain.CommandStartMatch {
 					timers.resetExpiry(r.lifetime)
+				}
+				if retire {
+					r.retireNow()
+					return
 				}
 			}
 		}
