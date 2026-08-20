@@ -3,6 +3,8 @@ package room
 import (
 	"crypto/subtle"
 	"errors"
+
+	"tripleagent/server/internal/domain"
 )
 
 var ErrInvalidCredential = errors.New("invalid reconnect token")
@@ -25,9 +27,9 @@ func validCredential(credentials map[string]string, playerID, token string) bool
 	return subtle.ConstantTimeCompare([]byte(expected), []byte(token)) == 1
 }
 
-func pruneCredentials(credentials map[string]string, statePlayers map[string]struct{}) {
+func pruneCredentials(credentials map[string]string, state domain.GameState) {
 	for playerID := range credentials {
-		if _, exists := statePlayers[playerID]; !exists {
+		if _, exists := state.Players[playerID]; !exists {
 			delete(credentials, playerID)
 		}
 	}
