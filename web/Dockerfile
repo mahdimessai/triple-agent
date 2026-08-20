@@ -11,10 +11,12 @@ FROM oven/bun:1-alpine AS builder
 
 WORKDIR /app
 ENV NEXT_TELEMETRY_DISABLED=1
+ENV PATH="/app/node_modules/.bin:/app/web/node_modules/.bin:$PATH"
 
-COPY --from=deps /app/node_modules ./node_modules
 COPY package.json bun.lock* ./
 COPY web ./web
+COPY --from=deps /app/node_modules ./node_modules
+COPY --from=deps /app/web/node_modules ./web/node_modules
 
 ARG NEXT_PUBLIC_TRIPLE_AGENT_API_URL=http://localhost:8080
 ENV NEXT_PUBLIC_TRIPLE_AGENT_API_URL=$NEXT_PUBLIC_TRIPLE_AGENT_API_URL

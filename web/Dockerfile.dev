@@ -9,6 +9,7 @@ RUN bun install --frozen-lockfile
 COPY . .
 
 ENV NEXT_TELEMETRY_DISABLED=1
+ENV PATH="/app/node_modules/.bin:/app/web/node_modules/.bin:$PATH"
 EXPOSE 3000
 
 CMD ["bun", "run", "dev"]

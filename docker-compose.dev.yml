@@ -15,6 +15,7 @@ services:
     volumes:
       - .:/app
       - web_node_modules:/app/node_modules
+      - web_child_node_modules:/app/web/node_modules
       - web_next:/app/web/.next
     working_dir: /app
     command: bun run dev
@@ -24,4 +25,5 @@ services:
 
 volumes:
   web_node_modules:
+  web_child_node_modules:
   web_next:
