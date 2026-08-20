@@ -3,8 +3,8 @@ import assert from "node:assert/strict";
 import {
   getOperation, hiddenAgendaMemberIds, liveOperationIds, operationBrief, operationIdForServerKind,
   operationResultText, operations, packOperationIds, roomBriefing,
-} from "../app/_game/operations";
-import type { RoomProjection } from "../app/_game/protocol";
+} from "../features/triple-agent/operations";
+import type { RoomProjection } from "../features/triple-agent/protocol";
 
 function projection(): RoomProjection {
   return {
