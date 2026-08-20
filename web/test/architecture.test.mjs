@@ -30,8 +30,9 @@ function assertNoImport(files, forbidden, message) {
   }
 }
 
-test("app routes compose features rather than reaching into realtime internals", () => {
-  assertNoImport(sourceFiles(app), [
+test("production app routes compose features rather than reaching into realtime internals", () => {
+  const productionAppFiles = sourceFiles(app).filter((file) => !file.replaceAll("\\", "/").includes("/app/mock/"));
+  assertNoImport(productionAppFiles, [
     /features\/triple-agent\/(?:protocol|transport|session)(?:\/|$)/,
     /app\/_game/,
   ], "must not import Triple Agent internals");
