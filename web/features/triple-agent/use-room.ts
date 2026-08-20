@@ -10,27 +10,22 @@ import {
   type RoomSocket,
   type RoomSocketEvent,
 } from "./room";
-import { isRoomIdentity, type ClientCommand, type RoomIdentity, type RoomProjection } from "./protocol";
+import type { ClientCommand, RoomIdentity, RoomProjection } from "./protocol";
+import { RECONNECT_GRACE_PERIOD_MS, reconnectDelay } from "./session/reconnect-policy";
+import {
+  INITIAL_ROOM_STATE,
+  roomReducer,
+  type PendingCommand,
+  type RoomNotice,
+  type RoomStatus,
+} from "./session/room-state";
+import { clearRoomIdentity, loadRoomIdentity, saveRoomIdentity } from "./session/room-storage";
 
-const STORAGE_KEY = "triple-agent-room";
-const RECONNECT_GRACE_PERIOD_MS = 300_000;
-const INITIAL_RECONNECT_DELAY_MS = 500;
-const MAX_RECONNECT_DELAY_MS = 8_000;
-const RECONNECT_JITTER_MS = 250;
+export type { PendingCommand, RoomNotice, RoomStatus } from "./session/room-state";
+
 const SESSION_EXPIRED_MESSAGE = "This room session has expired";
 const OFFLINE_SESSION_EXPIRED_MESSAGE = "The room session expired after five minutes offline";
 const KICKED_MESSAGE = "You have been removed from the lobby by the host.";
-
-export type RoomStatus = "idle" | "connecting" | "online" | "reconnecting" | "leaving";
-
-export type RoomNotice =
-  | { kind: "kicked"; message: string; joinCode: string }
-  | { kind: "session-expired"; message: string };
-
-export type PendingCommand = {
-  requestId: string;
-  kind: ClientCommand["kind"];
-};
 
 export type UseRoomResult = {
   identity: RoomIdentity | null;
@@ -46,126 +41,12 @@ export type UseRoomResult = {
   dismissNotice(): void;
 };
 
-type RoomState = {
-  identity: RoomIdentity | null;
-  projection: RoomProjection | null;
-  status: RoomStatus;
-  error: string | null;
-  notice: RoomNotice | null;
-  pending: PendingCommand | null;
-};
-
-type RoomStateAction =
-  | { type: "request-started" }
-  | { type: "request-failed"; message: string }
-  | { type: "connect-started"; identity: RoomIdentity; reconnecting: boolean }
-  | { type: "connected" }
-  | { type: "projection"; projection: RoomProjection }
-  | { type: "command-sent"; pending: PendingCommand }
-  | { type: "command-acked"; requestId: string; error?: string }
-  | { type: "connection-lost" }
-  | { type: "error"; message: string }
-  | { type: "session-ended"; notice: RoomNotice }
-  | { type: "leave-started" }
-  | { type: "left"; error?: string }
-  | { type: "notice-dismissed" };
-
-const INITIAL_STATE: RoomState = {
-  identity: null,
-  projection: null,
-  status: "idle",
-  error: null,
-  notice: null,
-  pending: null,
-};
-
-function roomReducer(state: RoomState, action: RoomStateAction): RoomState {
-  switch (action.type) {
-    case "request-started":
-      return { ...state, status: "connecting", error: null, notice: null };
-    case "request-failed":
-      return { ...state, status: "idle", error: action.message };
-    case "connect-started":
-      return {
-        ...state,
-        identity: action.identity,
-        status: action.reconnecting ? "reconnecting" : "connecting",
-        error: null,
-        pending: null,
-      };
-    case "connected":
-      return { ...state, status: "online", error: null };
-    case "projection":
-      return { ...state, projection: action.projection, error: null };
-    case "command-sent":
-      return { ...state, pending: action.pending, error: null };
-    case "command-acked":
-      if (state.pending?.requestId !== action.requestId) return state;
-      return {
-        ...state,
-        pending: null,
-        error: action.error ?? null,
-      };
-    case "connection-lost":
-      return { ...state, status: "reconnecting", pending: null };
-    case "error":
-      return { ...state, error: action.message };
-    case "session-ended":
-      return {
-        ...INITIAL_STATE,
-        notice: action.notice,
-      };
-    case "leave-started":
-      return { ...state, status: "leaving", pending: null, error: null };
-    case "left":
-      return { ...INITIAL_STATE, error: action.error ?? null };
-    case "notice-dismissed":
-      return { ...state, notice: null };
-  }
-}
-
-function reconnectDelay(attempt: number, randomValue = Math.random()): number {
-  const exponential = Math.min(MAX_RECONNECT_DELAY_MS, INITIAL_RECONNECT_DELAY_MS * 2 ** attempt);
-  return exponential + Math.floor(randomValue * RECONNECT_JITTER_MS);
-}
-
-function loadRoomIdentity(): RoomIdentity | null {
-  try {
-    const raw = window.localStorage.getItem(STORAGE_KEY);
-    if (!raw) return null;
-    const value: unknown = JSON.parse(raw);
-    if (!isRoomIdentity(value)) {
-      window.localStorage.removeItem(STORAGE_KEY);
-      return null;
-    }
-    return value;
-  } catch {
-    return null;
-  }
-}
-
-function saveRoomIdentity(identity: RoomIdentity): void {
-  try {
-    window.localStorage.setItem(STORAGE_KEY, JSON.stringify(identity));
-  } catch {
-    // The active room still works if storage is unavailable; only reload restore is lost.
-  }
-}
-
-function clearRoomIdentity(): void {
-  try {
-    window.localStorage.removeItem(STORAGE_KEY);
-  } catch {
-    // Nothing else can be done when storage is blocked.
-  }
-}
-
 function errorMessage(cause: unknown, fallback: string): string {
   return cause instanceof Error && cause.message ? cause.message : fallback;
 }
 
 export function useRoom(): UseRoomResult {
-  const [state, dispatch] = useReducer(roomReducer, INITIAL_STATE);
+  const [state, dispatch] = useReducer(roomReducer, INITIAL_ROOM_STATE);
   const socketRef = useRef<RoomSocket | null>(null);
   const reconnectTimerRef = useRef<number | null>(null);
   const reconnectAttemptRef = useRef(0);

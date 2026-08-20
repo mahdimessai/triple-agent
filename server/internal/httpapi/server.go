@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"errors"
 	"io"
+	"log/slog"
 	"net/http"
 
 	"tripleagent/server/internal/game"
@@ -19,20 +20,36 @@ var (
 	errMultipleJSON = errors.New("request must contain one JSON value")
 )
 
+type Options struct {
+	Logger         *slog.Logger
+	AllowedOrigins []string
+}
+
 type handler struct {
 	rooms    *room.Registry
+	logger   *slog.Logger
+	origins  originPolicy
 	upgrader websocket.Upgrader
 }
 
 func New(rooms *room.Registry) http.Handler {
+	return NewWithOptions(rooms, Options{})
+}
+
+func NewWithOptions(rooms *room.Registry, options Options) http.Handler {
+	logger := options.Logger
+	if logger == nil {
+		logger = slog.Default()
+	}
+	origins := newOriginPolicy(options.AllowedOrigins)
 	h := &handler{
-		rooms: rooms,
+		rooms:   rooms,
+		logger:  logger,
+		origins: origins,
 		upgrader: websocket.Upgrader{
 			ReadBufferSize:  1024,
 			WriteBufferSize: 1024,
-			CheckOrigin: func(*http.Request) bool {
-				return true
-			},
+			CheckOrigin:     origins.allowsRequest,
 		},
 	}
 	mux := http.NewServeMux()
@@ -41,24 +58,11 @@ func New(rooms *room.Registry) http.Handler {
 	mux.HandleFunc("POST /api/lobbies/join", h.joinLobby)
 	mux.HandleFunc("POST /api/lobbies/leave", h.leaveLobby)
 	mux.HandleFunc("GET /ws", h.websocket)
-	return withCORS(mux)
+	return origins.middleware(mux)
 }
 
 func (h *handler) health(w http.ResponseWriter, _ *http.Request) {
 	writeJSON(w, http.StatusOK, map[string]string{"status": "ok"})
-}
-
-func withCORS(next http.Handler) http.Handler {
-	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		w.Header().Set("Access-Control-Allow-Origin", "*")
-		w.Header().Set("Access-Control-Allow-Headers", "*")
-		w.Header().Set("Access-Control-Allow-Methods", "*")
-		if r.Method == http.MethodOptions {
-			w.WriteHeader(http.StatusNoContent)
-			return
-		}
-		next.ServeHTTP(w, r)
-	})
 }
 
 type errorResponse struct {
@@ -86,8 +90,11 @@ func decodeJSON(w http.ResponseWriter, r *http.Request, destination any) error {
 	return nil
 }
 
-func writeHTTPError(w http.ResponseWriter, err error) {
+func (h *handler) writeHTTPError(w http.ResponseWriter, r *http.Request, err error) {
 	status, code, message := classifyHTTPError(err)
+	if status >= http.StatusInternalServerError {
+		h.logger.Error("http request failed", "method", r.Method, "path", r.URL.Path, "error", err)
+	}
 	writeJSON(w, status, errorResponse{Error: message, Code: code})
 }
 

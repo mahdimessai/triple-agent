@@ -33,7 +33,7 @@ func (r *Registry) Create(playerName string) (Identity, error) {
 		playerID := "player_" + randomHex(6)
 		token := randomHex(24)
 		joinCode := newJoinCode()
-		state := game.NewLobby(playerID, strings.TrimSpace(playerName), game.DefaultSettings())
+		state := game.NewLobbyWithSeed(playerID, strings.TrimSpace(playerName), game.DefaultSettings(), randomUint64())
 		active := newRoom(roomID, state, map[string]string{playerID: token}, func(closed *Room) {
 			r.remove(roomID, joinCode, closed)
 		})
@@ -113,5 +113,3 @@ func (r *Registry) remove(roomID, joinCode string, expected *Room) {
 		delete(r.codes, key)
 	}
 }
-
-

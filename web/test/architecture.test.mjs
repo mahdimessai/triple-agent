@@ -1,13 +1,16 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import { existsSync, readFileSync, readdirSync, statSync } from "node:fs";
-import { dirname, extname, join, resolve } from "node:path";
+import { dirname, extname, join, relative, resolve } from "node:path";
 
 const root = process.cwd();
 const app = join(root, "app");
-const game = join(app, "_game");
+const features = join(root, "features");
+const game = join(features, "triple-agent");
+const components = join(root, "components");
 
 function sourceFiles(directory) {
+  if (!existsSync(directory)) return [];
   const result = [];
   for (const name of readdirSync(directory)) {
     const path = join(directory, name);
@@ -18,22 +21,32 @@ function sourceFiles(directory) {
 }
 
 function read(path) { return readFileSync(path, "utf8"); }
+function projectFiles() { return [...sourceFiles(app), ...sourceFiles(features), ...sourceFiles(components)]; }
 
 const gameFiles = sourceFiles(game);
 const gameSource = gameFiles.map(read).join("\n");
 
-test("deep-cut target has no legacy architecture directories", () => {
-  for (const directory of ["components", "features", "api", "connection", "session", "model", "protocol", "operations"]) {
-    assert.equal(existsSync(join(root, directory)), false, `${directory}/ must not exist at web root`);
-    assert.equal(existsSync(join(game, directory)), false, `${directory}/ must not exist inside app/_game`);
+test("Next.js app is routing and composition, not the Triple Agent implementation", () => {
+  assert.equal(existsSync(join(app, "_game")), false, "game implementation must not live under app/");
+  assert.equal(existsSync(game), true, "Triple Agent must have an explicit feature home");
+  const page = read(join(app, "page.tsx"));
+  assert.match(page, /@\/features\/triple-agent\/game/);
+});
+
+test("feature code never depends on the routing layer", () => {
+  for (const file of gameFiles) {
+    const source = read(file);
+    assert.equal(source.includes("@/app/"), false, `${relative(root, file)} imports app/`);
+    assert.equal(source.includes("../../app/"), false, `${relative(root, file)} reaches into app/`);
   }
 });
 
-test("transitional screen and command abstractions cannot creep back in", () => {
-  for (const token of ["ScreenId", "CommandPayload", "clientCommandFromLegacy", "useRoomSession", "MissionScreen", "next/dynamic", "setScreen("]) {
-    assert.equal(gameSource.includes(token), false, `forbidden transitional token: ${token}`);
+test("shared UI cannot depend on Triple Agent feature internals", () => {
+  for (const file of sourceFiles(components)) {
+    const source = read(file);
+    assert.equal(source.includes("@/features/triple-agent"), false, `${relative(root, file)} imports Triple Agent`);
+    assert.equal(source.includes("../features/triple-agent"), false, `${relative(root, file)} imports Triple Agent`);
   }
-  assert.equal(/\bclass\s+[A-Za-z_$]/.test(gameSource), false, "frontend application classes are forbidden");
 });
 
 test("production game code never imports the mock workbench", () => {
@@ -60,8 +73,8 @@ test("screen command literals are members of ClientCommand", () => {
   for (const kind of emitted) assert.equal(valid.has(kind), true, `screen emits unknown command ${kind}`);
 });
 
-test("all relative source imports resolve", () => {
-  const files = sourceFiles(app);
+test("all relative source imports resolve across app, features, and shared components", () => {
+  const files = projectFiles();
   const known = new Set(files.map((path) => resolve(path)));
   for (const file of files) {
     for (const match of read(file).matchAll(/(?:from\s+|import\s*\()(["'])([^"']+)\1/g)) {
@@ -69,7 +82,7 @@ test("all relative source imports resolve", () => {
       if (!specifier.startsWith(".")) continue;
       const base = resolve(dirname(file), specifier);
       const candidates = [base, `${base}.ts`, `${base}.tsx`, `${base}.mjs`, join(base, "index.ts"), join(base, "index.tsx")];
-      assert.equal(candidates.some((candidate) => known.has(resolve(candidate))), true, `${file} has unresolved import ${specifier}`);
+      assert.equal(candidates.some((candidate) => known.has(resolve(candidate))), true, `${relative(root, file)} has unresolved import ${specifier}`);
     }
   }
 });

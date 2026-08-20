@@ -113,11 +113,53 @@ func isResultsPhase(phase Phase) bool {
 	}
 }
 
-func revealsVoteTotals(phase Phase) bool   { return isResultsPhase(phase) || phase == PhaseEnd }
-func revealsImprisonment(phase Phase) bool { return isResultsPhase(phase) || phase == PhaseEnd }
-func revealsAgency(phase Phase) bool       { return isResultsPhase(phase) || phase == PhaseEnd }
-func revealsWinner(phase Phase) bool       { return isResultsPhase(phase) || phase == PhaseEnd }
-func revealsLeaderboard(phase Phase) bool  { return isResultsPhase(phase) || phase == PhaseEnd }
+// Reveal helpers are intentionally cumulative. A projection is the server-side
+// secrecy boundary, so data must not be sent before the phase where the game
+// actually reveals it. The client UI is not trusted to hide premature data.
+func revealsVoteTotals(phase Phase) bool {
+	switch phase {
+	case PhaseVoteResults, PhaseImprisonment, PhaseAgencyReveal, PhaseOutcomeReveal, PhaseLeaderboard, PhaseOutOfLoop, PhaseEnd:
+		return true
+	default:
+		return false
+	}
+}
+
+func revealsImprisonment(phase Phase) bool {
+	switch phase {
+	case PhaseImprisonment, PhaseAgencyReveal, PhaseOutcomeReveal, PhaseLeaderboard, PhaseOutOfLoop, PhaseEnd:
+		return true
+	default:
+		return false
+	}
+}
+
+func revealsAgency(phase Phase) bool {
+	switch phase {
+	case PhaseAgencyReveal, PhaseOutcomeReveal, PhaseLeaderboard, PhaseOutOfLoop, PhaseEnd:
+		return true
+	default:
+		return false
+	}
+}
+
+func revealsWinner(phase Phase) bool {
+	switch phase {
+	case PhaseOutcomeReveal, PhaseLeaderboard, PhaseOutOfLoop, PhaseEnd:
+		return true
+	default:
+		return false
+	}
+}
+
+func revealsLeaderboard(phase Phase) bool {
+	switch phase {
+	case PhaseLeaderboard, PhaseOutOfLoop, PhaseEnd:
+		return true
+	default:
+		return false
+	}
+}
 
 func winnerActivity(state State) string {
 	if state.Vote.ImprisonedPlayerID != "" && state.Players[state.Vote.ImprisonedPlayerID].ObjectiveKind == "IMPRISON_SELF" {

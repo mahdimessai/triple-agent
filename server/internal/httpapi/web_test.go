@@ -129,19 +129,31 @@ type assertionError string
 
 func (e assertionError) Error() string { return string(e) }
 
-func TestCORSAndOptionsContract(t *testing.T) {
+func TestOriginPolicyAndPreflightContract(t *testing.T) {
 	registry := room.NewRegistry()
 	defer registry.Close()
-	handler := New(registry)
+	handler := NewWithOptions(registry, Options{AllowedOrigins: []string{"https://game.example"}})
 
-	req := httptest.NewRequest(http.MethodOptions, "/api/lobbies", nil)
-	response := httptest.NewRecorder()
-	handler.ServeHTTP(response, req)
-	if response.Code != http.StatusNoContent {
-		t.Fatalf("status=%d", response.Code)
+	allowed := httptest.NewRequest(http.MethodOptions, "/api/lobbies", nil)
+	allowed.Header.Set("Origin", "https://game.example")
+	allowedResponse := httptest.NewRecorder()
+	handler.ServeHTTP(allowedResponse, allowed)
+	if allowedResponse.Code != http.StatusNoContent {
+		t.Fatalf("status=%d", allowedResponse.Code)
 	}
-	if response.Header().Get("Access-Control-Allow-Origin") != "*" || response.Header().Get("Access-Control-Allow-Headers") != "*" || response.Header().Get("Access-Control-Allow-Methods") != "*" {
-		t.Fatalf("unexpected cors headers: %#v", response.Header())
+	if allowedResponse.Header().Get("Access-Control-Allow-Origin") != "https://game.example" {
+		t.Fatalf("unexpected cors headers: %#v", allowedResponse.Header())
+	}
+	if allowedResponse.Header().Get("Access-Control-Allow-Headers") != "Content-Type" || allowedResponse.Header().Get("Access-Control-Allow-Methods") != "GET, POST, OPTIONS" {
+		t.Fatalf("unexpected cors contract: %#v", allowedResponse.Header())
+	}
+
+	rejected := httptest.NewRequest(http.MethodOptions, "/api/lobbies", nil)
+	rejected.Header.Set("Origin", "https://evil.example")
+	rejectedResponse := httptest.NewRecorder()
+	handler.ServeHTTP(rejectedResponse, rejected)
+	if rejectedResponse.Code != http.StatusForbidden {
+		t.Fatalf("bad origin status=%d body=%s", rejectedResponse.Code, rejectedResponse.Body.String())
 	}
 }
 

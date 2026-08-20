@@ -5,7 +5,17 @@ import (
 	"time"
 )
 
+// NewLobby is convenient for callers that do not need to control randomness.
+// Production room creation uses NewLobbyWithSeed with crypto/rand entropy so
+// secret role/operation choices do not begin from a wall-clock-derived seed.
 func NewLobby(hostID, hostName string, settings Settings) State {
+	return NewLobbyWithSeed(hostID, hostName, settings, uint64(time.Now().UnixNano()))
+}
+
+// NewLobbyWithSeed creates a lobby with an explicit deterministic random seed.
+// Keeping the seed in State makes a sequence of game transitions reproducible
+// in tests and debugging when the same seed and commands are replayed.
+func NewLobbyWithSeed(hostID, hostName string, settings Settings, seed uint64) State {
 	if settings.MinPlayers == 0 {
 		settings = DefaultSettings()
 	}
@@ -23,7 +33,7 @@ func NewLobby(hostID, hostName string, settings Settings) State {
 		Players:     map[string]Player{hostID: {ID: hostID, Name: hostName, Connected: true, CanVote: true, VotingPower: 1}},
 		PlayerOrder: []string{hostID},
 		Vote:        VoteState{Submitted: map[string]string{}, Totals: map[string]int{}},
-		RandomState: uint64(time.Now().UnixNano()),
+		RandomState: seed,
 	}
 }
 
