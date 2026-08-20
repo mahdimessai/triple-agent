@@ -1,7 +1,6 @@
 package room
 
 import (
-	"errors"
 	"time"
 
 	"tripleagent/server/internal/domain"
@@ -69,5 +68,3 @@ func (r *Room) handleDetach(runtime *runtimeState, message roomMessage) bool {
 	}
 	return r.broadcast(runtime)
 }
-
-var _ = errors.New
