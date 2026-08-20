@@ -9,8 +9,8 @@ services:
 
   web:
     build:
-      context: .
-      dockerfile: web/Dockerfile
+      context: ./web
+      dockerfile: Dockerfile
       args:
         NEXT_PUBLIC_TRIPLE_AGENT_API_URL: "http://localhost:8080"
     restart: unless-stopped
