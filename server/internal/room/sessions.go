@@ -16,49 +16,58 @@ type roomSession struct {
 	close Closer
 }
 
-func (r *Room) handleAttach(state *domain.GameState, sessions map[string]roomSession, message roomMessage) {
-	player, ok := state.Players[message.playerID]
+// handleAttach returns true when applying a failed initial delivery leaves the
+// lobby empty and the room should retire.
+func (r *Room) handleAttach(runtime *runtimeState, message roomMessage) bool {
+	player, ok := runtime.game.Players[message.playerID]
 	if !ok {
-		message.reply <- roomResponse{err: errors.New("player is not in room")}
-		return
+		message.reply <- roomResponse{err: domain.ErrPlayerNotInRoom}
+		return false
 	}
-	previousHost := state.HostID
-	if previous, exists := sessions[message.playerID]; exists && previous.close != nil {
+	if previous, exists := runtime.sessions[message.playerID]; exists && previous.close != nil {
 		previous.close()
 	}
+
 	player.Connected = true
-	state.Players[message.playerID] = player
-	// Reconnecting only restores presence. Host transfer is decided when the
-	// player disconnects, so a returning player never reclaims a role that has
-	// already moved to someone else.
-	sessions[message.playerID] = roomSession{id: message.sessionID, sender: message.sender, close: message.close}
-	if err := message.sender(domain.Project(*state, message.playerID)); err != nil {
-		delete(sessions, message.playerID)
-		player.Connected = false
-		state.Players[message.playerID] = player
-		state.HostID = previousHost
+	runtime.game.Players[message.playerID] = player
+	runtime.sessions[message.playerID] = roomSession{id: message.sessionID, sender: message.sender, close: message.close}
+
+	if err := message.sender(domain.Project(runtime.game, message.playerID)); err != nil {
+		delete(runtime.sessions, message.playerID)
+		transition, disconnectErr := domain.ApplyDisconnect(runtime.game, message.playerID, time.Now().UTC())
+		if disconnectErr == nil && transition.Changed {
+			runtime.game = transition.State
+			pruneCredentials(runtime.credentials, runtime.game)
+		}
 		message.reply <- roomResponse{err: err}
-		return
+		if len(runtime.game.PlayerOrder) == 0 {
+			return true
+		}
+		return r.broadcast(runtime)
 	}
+
 	message.reply <- roomResponse{}
-	r.broadcastExcept(state, sessions, message.playerID)
+	return r.broadcastExcept(runtime, message.playerID)
 }
 
-func (r *Room) handleDetach(state *domain.GameState, sessions map[string]roomSession, message roomMessage) {
-	current, exists := sessions[message.playerID]
+// handleDetach returns true when the detach releases the final lobby seat.
+func (r *Room) handleDetach(runtime *runtimeState, message roomMessage) bool {
+	current, exists := runtime.sessions[message.playerID]
 	if !exists || current.id != message.sessionID {
-		if message.reply != nil {
-			message.reply <- roomResponse{}
-		}
-		return
+		return false
 	}
-	delete(sessions, message.playerID)
-	transition, err := domain.ApplyDisconnect(*state, message.playerID, time.Now().UTC())
-	if err == nil && transition.Changed {
-		*state = transition.State
-		r.broadcast(state, sessions)
+	delete(runtime.sessions, message.playerID)
+
+	transition, err := domain.ApplyDisconnect(runtime.game, message.playerID, time.Now().UTC())
+	if err != nil || !transition.Changed {
+		return false
 	}
-	if message.reply != nil {
-		message.reply <- roomResponse{err: err}
+	runtime.game = transition.State
+	pruneCredentials(runtime.credentials, runtime.game)
+	if len(runtime.game.PlayerOrder) == 0 {
+		return true
 	}
+	return r.broadcast(runtime)
 }
+
+var _ = errors.New
