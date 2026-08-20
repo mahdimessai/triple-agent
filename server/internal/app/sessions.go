@@ -7,37 +7,29 @@ import (
 	"github.com/Southclaws/fault/fmsg"
 )
 
-// Authenticate verifies a reconnect credential before exposing the
-// active room actor. It intentionally preserves the old validation order.
-func (s *Sessions) Authenticate(roomID, playerID string, reconnectToken string) (*room.Room, error) {
-	if err := s.admit.ValidateReconnectToken(roomID, playerID, reconnectToken); err != nil {
-		return nil, fault.Wrap(wrapSessionError(err), fmsg.With("failed to authenticate room session"))
-	}
+// Authenticate resolves the live room and lets its actor verify the seat-owned
+// reconnect credential.
+func (s *Sessions) Authenticate(roomID, playerID, reconnectToken string) (*room.Room, error) {
 	activeRoom, ok := s.rooms.Get(roomID)
 	if !ok {
 		return nil, fault.Wrap(wrapSessionError(ErrRoomInactive), fmsg.With("failed to authenticate room session"))
 	}
-	if _, err := activeRoom.Snapshot(playerID); err != nil {
+	if err := activeRoom.Authenticate(playerID, reconnectToken); err != nil {
 		return nil, fault.Wrap(wrapSessionError(err), fmsg.With("failed to authenticate room session"))
 	}
 	return activeRoom, nil
 }
 
 type Session struct {
-	// Room is the live actor this connection is attached to.
-	Room *room.Room
-	// RoomID is retained for credential revocation during detach.
-	RoomID string
-	// PlayerID identifies the authenticated player for this connection.
+	Room     *room.Room
+	RoomID   string
 	PlayerID string
-	// ID distinguishes this connection from an older connection for the same player.
-	ID string
+	ID       string
 }
 
-// Attach attaches a connection to the live room. Host transfer happens
-// inside the actor and is not mirrored anywhere, so there is nothing to persist
-// and nothing to roll back.
-func (s *Sessions) Attach(activeRoom *room.Room, roomID, playerID string, sessionID string, sender room.Sender, closer room.Closer) (*Session, error) {
+// Attach attaches a connection to the live room. Session replacement and
+// presence changes remain serialized by the room actor.
+func (s *Sessions) Attach(activeRoom *room.Room, roomID, playerID, sessionID string, sender room.Sender, closer room.Closer) (*Session, error) {
 	if activeRoom == nil {
 		return nil, fault.Wrap(wrapSessionError(ErrRoomInactive), fmsg.With("failed to attach room session"))
 	}
@@ -47,18 +39,12 @@ func (s *Sessions) Attach(activeRoom *room.Room, roomID, playerID string, sessio
 	return &Session{Room: activeRoom, RoomID: roomID, PlayerID: playerID, ID: sessionID}, nil
 }
 
-// Detach removes the actor session. An in-game socket close remains
-// recoverable, while a lobby socket close releases the seat immediately so a
-// later join creates a fresh player identity.
+// Detach tells the actor that this connection disappeared. Lobby-seat release,
+// credential revocation, host transfer, and empty-room retirement all happen in
+// the same actor turn.
 func (s *Sessions) Detach(session *Session) {
 	if session == nil || session.Room == nil {
 		return
 	}
 	session.Room.Detach(session.PlayerID, session.ID)
-	// The actor has already applied its phase-specific absence policy. If the
-	// seat disappeared, revoke the credential as well so a lobby disconnect
-	// cannot be mistaken for an in-game reconnect.
-	if _, err := session.Room.Snapshot(session.PlayerID); err != nil {
-		s.admit.Revoke(session.RoomID, session.PlayerID)
-	}
 }
