@@ -22,60 +22,69 @@ func NewManager() *Manager {
 }
 
 func (m *Manager) Create(state domain.GameState) *Room {
-	return m.CreateWithCleanup(state, nil)
+	return m.CreateWithCredentials(state, nil, nil)
 }
 
 func (m *Manager) CreateWithCleanup(state domain.GameState, cleanup func()) *Room {
-	var room *Room
-	room = newRoom(state, roomLifetime, endedRoomLifetime, func() {
-		if m.removeIf(state.RoomID, room) && cleanup != nil {
-			go cleanup()
+	return m.CreateWithCredentials(state, nil, cleanup)
+}
+
+// CreateWithCredentials starts a room whose actor owns the supplied reconnect
+// credentials. cleanup releases the cross-room resources, such as the join code,
+// when this exact room instance retires.
+func (m *Manager) CreateWithCredentials(state domain.GameState, credentials map[string]string, cleanup func()) *Room {
+	var active *Room
+	retire := func() {
+		if m.removeIf(state.RoomID, active) && cleanup != nil {
+			cleanup()
 		}
-	})
-	room.cleanup = cleanup
+	}
+	active = newRoomWithCredentials(state, credentials, roomLifetime, endedRoomLifetime, retire)
+	active.cleanup = cleanup
+
 	m.mu.Lock()
 	old := m.rooms[state.RoomID]
-	m.rooms[state.RoomID] = room
+	m.rooms[state.RoomID] = active
 	m.mu.Unlock()
 	if old != nil {
 		old.Close()
 	}
-	return room
+	return active
 }
 
 func (m *Manager) Get(roomID string) (*Room, bool) {
 	m.mu.RLock()
 	defer m.mu.RUnlock()
-	room, ok := m.rooms[roomID]
-	return room, ok
+	active, ok := m.rooms[roomID]
+	return active, ok
 }
 
-// Remove retires a room explicitly. It runs the same cleanup as expiry does, so
-// a room's lifetime has exactly one owner however it ends.
+// Remove retires a room explicitly. Actor-driven expiry and empty-room cleanup
+// use the same cleanup callback through removeIf.
 func (m *Manager) Remove(roomID string) {
 	m.mu.Lock()
-	room := m.rooms[roomID]
+	active := m.rooms[roomID]
 	delete(m.rooms, roomID)
 	m.mu.Unlock()
-	if room == nil {
+	if active == nil {
 		return
 	}
-	room.Close()
-	if room.cleanup != nil {
-		room.cleanup()
+	active.Close()
+	if active.cleanup != nil {
+		active.cleanup()
 	}
 }
 
+// removeIf removes an actor that is retiring itself. It deliberately does not
+// call Close because the actor closes its own done channel after the callback.
 func (m *Manager) removeIf(roomID string, expected *Room) bool {
 	m.mu.Lock()
-	room, ok := m.rooms[roomID]
-	if ok && room == expected {
-		delete(m.rooms, roomID)
+	defer m.mu.Unlock()
+
+	active, ok := m.rooms[roomID]
+	if !ok || active != expected {
+		return false
 	}
-	m.mu.Unlock()
-	if ok && room == expected {
-		expected.Close()
-		return true
-	}
-	return false
+	delete(m.rooms, roomID)
+	return true
 }
