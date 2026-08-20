@@ -37,11 +37,14 @@ npm-debug.log*
 yarn-debug.log*
 yarn-error.log*
 pnpm-debug.log*
+bun-debug.log*
 
-# Node / Web build artifacts
+# Node / Bun / Web build artifacts
 node_modules
 **/node_modules
+.bun
 web/.next
+web/.test-dist
 web/out
 web/dist
 web/coverage

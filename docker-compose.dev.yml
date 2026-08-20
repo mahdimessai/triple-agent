@@ -15,9 +15,9 @@ services:
     volumes:
       - .:/app
       - web_node_modules:/app/node_modules
-      - web_next:/app/httpapi/.next
+      - web_next:/app/web/.next
     working_dir: /app
-    command: npm run dev
+    command: bun run dev
     environment:
       NODE_ENV: development
       NEXT_TELEMETRY_DISABLED: "1"

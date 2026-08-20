@@ -6,11 +6,12 @@
     "web"
   ],
   "scripts": {
-    "dev": "npm run dev --workspace triple-agent-web",
-    "build": "npm run build --workspace triple-agent-web",
-    "start": "npm run start --workspace triple-agent-web",
-    "lint": "npm run lint --workspace triple-agent-web",
-    "typecheck": "npm run typecheck --workspace triple-agent-web",
+    "dev": "bun --filter triple-agent-web dev",
+    "build": "bun --filter triple-agent-web build",
+    "start": "bun --filter triple-agent-web start",
+    "lint": "bun --filter triple-agent-web lint",
+    "typecheck": "bun --filter triple-agent-web typecheck",
+    "test": "bun --filter triple-agent-web test",
     "server:dev": "go run ./server/cmd/tripleagent",
     "server:test": "go test ./server/...",
     "up": "docker compose up --build",

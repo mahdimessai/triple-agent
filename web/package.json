@@ -8,8 +8,8 @@
     "lint": "eslint .",
     "start": "next start",
     "typecheck": "tsc --noEmit",
-    "test": "rm -rf .test-dist && tsc -p test/tsconfig.json && node --test .test-dist/test/*.test.js test/*.test.mjs",
-    "verify": "npm run typecheck && npm run lint && npm test && npm run build"
+    "test": "bun test",
+    "verify": "bun run typecheck && bun run lint && bun test && bun run build"
   },
   "dependencies": {
     "next": "^16.0.7",
