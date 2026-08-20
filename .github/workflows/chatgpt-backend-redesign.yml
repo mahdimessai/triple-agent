@@ -1,0 +1,58 @@
+name: Backend redesign validation
+
+on:
+  push:
+    branches:
+      - chatgpt/backend-redesign-20260820
+  pull_request:
+    branches:
+      - main
+
+permissions:
+  contents: read
+
+jobs:
+  validate:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+          cache: true
+
+      - name: Check formatting
+        shell: bash
+        run: |
+          files="$(find server -name '*.go' -type f -print0 | xargs -0 gofmt -l)"
+          if [ -n "$files" ]; then
+            printf 'gofmt required:\n%s\n' "$files"
+            exit 1
+          fi
+
+      - name: Vet
+        run: go vet ./server/...
+
+      - name: Test
+        run: go test ./server/...
+
+      - name: Race test
+        run: go test -race ./server/...
+
+  package:
+    needs: validate
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Package repository
+        shell: bash
+        run: zip -qr triple-agent-backend-redesign.zip . -x '.git/*'
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: triple-agent-backend-redesign
+          path: triple-agent-backend-redesign.zip
+          if-no-files-found: error
+          retention-days: 7

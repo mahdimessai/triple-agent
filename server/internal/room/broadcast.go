@@ -6,27 +6,34 @@ import (
 	"tripleagent/server/internal/domain"
 )
 
-func (r *Room) broadcast(state *domain.GameState, sessions map[string]roomSession) {
-	r.broadcastExcept(state, sessions, "")
+// broadcast returns true when delivery failures release the final lobby seat.
+func (r *Room) broadcast(runtime *runtimeState) bool {
+	return r.broadcastExcept(runtime, "")
 }
 
-func (r *Room) broadcastExcept(state *domain.GameState, sessions map[string]roomSession, excluded string) {
+func (r *Room) broadcastExcept(runtime *runtimeState, excluded string) bool {
 	for {
-		failed := r.deliver(*state, sessions, excluded)
+		failed := r.deliver(runtime.game, runtime.sessions, excluded)
 		if len(failed) == 0 {
-			return
+			return len(runtime.game.PlayerOrder) == 0
 		}
+
 		changed := false
 		for _, playerID := range failed {
-			transition, err := domain.ApplyDisconnect(*state, playerID, time.Now().UTC())
+			transition, err := domain.ApplyDisconnect(runtime.game, playerID, time.Now().UTC())
 			if err == nil && transition.Changed {
-				*state = transition.State
+				runtime.game = transition.State
+				pruneCredentials(runtime.credentials, runtime.game)
 				changed = true
 			}
 		}
-		if !changed {
-			return
+		if len(runtime.game.PlayerOrder) == 0 {
+			return true
 		}
+		if !changed {
+			return false
+		}
+
 		// Presence or host-transfer changes caused by a failed delivery must be
 		// observed by every remaining session before the actor processes more work.
 		excluded = ""

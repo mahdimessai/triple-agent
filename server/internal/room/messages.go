@@ -12,63 +12,75 @@ type Sender func(domain.Projection) error
 // Closer terminates an attached session after replacement, disconnect, or room cleanup.
 type Closer func()
 
+type messageKind uint8
+
+const (
+	messageAddPlayer messageKind = iota
+	messageAuthenticate
+	messageAttach
+	messageDetach
+	messageRemovePlayer
+	messageSnapshot
+	messageCommand
+)
+
 type roomMessage struct {
-	// kind selects the actor operation, such as attach, detach, or command.
-	kind string
-	// playerID identifies the player affected by the operation.
-	playerID string
-	// name is the display name for a player being added to the room.
-	name string
-	// sessionID identifies the connection that is attaching, detaching, or submitting.
+	kind      messageKind
+	playerID  string
+	name      string
+	token     string
 	sessionID string
-	// sender delivers the initial projection to a newly attached session.
-	sender Sender
-	// close terminates a replaced or invalidated session.
-	close Closer
-	// command is the client command the actor must validate and apply.
-	command *domain.Command
-	// commit persists an external side effect while the actor still owns the transition.
-	commit func(domain.GameState) error
-	// reply returns the actor result to the goroutine that submitted the message.
-	reply chan roomResponse
+	sender    Sender
+	close     Closer
+	command   *domain.Command
+	reply     chan roomResponse
 }
 
 type roomReply struct {
-	// projection is the actor's player-scoped view after a command or snapshot.
 	projection domain.Projection
-	// state is returned when a player removal needs the updated room state for cleanup.
-	state domain.GameState
-	// replayed reports that a request ID reused an already completed command.
-	replayed bool
+	replayed   bool
 }
 
 type roomResponse struct {
-	// reply contains successful operation data returned by the actor.
 	reply roomReply
-	// err contains the domain or session failure produced while handling the message.
-	err error
+	err   error
 }
 
-func (r *Room) AddPlayer(playerID string, name string) error {
-	return r.AddPlayerWithCommit(playerID, name, nil)
+func (r *Room) AddPlayer(playerID, name string) error {
+	return r.AddPlayerWithCredential(playerID, name, "")
 }
 
-// AddPlayerWithCommit seats a player and runs commit inside the actor before the
-// seat becomes visible. A commit failure discards the seat, so a credential is
-// only ever written for a player the room actually admitted.
-func (r *Room) AddPlayerWithCommit(playerID string, name string, commit func(domain.GameState) error) error {
+// AddPlayerWithCredential seats a player and registers the reconnect credential
+// in the same actor turn, so the seat and credential cannot diverge.
+func (r *Room) AddPlayerWithCredential(playerID, name, token string) error {
 	reply := make(chan roomResponse, 1)
-	if !r.send(roomMessage{kind: "add_player", playerID: playerID, name: name, commit: commit, reply: reply}) {
+	if !r.send(roomMessage{
+		kind:     messageAddPlayer,
+		playerID: playerID,
+		name:     name,
+		token:    token,
+		reply:    reply,
+	}) {
 		return errors.New("room is closed")
 	}
 	_, err := r.wait(reply)
 	return err
 }
 
-func (r *Room) Attach(playerID string, sessionID string, sender Sender, close Closer) error {
+// Authenticate verifies that a live seat owns the supplied reconnect token.
+func (r *Room) Authenticate(playerID, token string) error {
+	reply := make(chan roomResponse, 1)
+	if !r.send(roomMessage{kind: messageAuthenticate, playerID: playerID, token: token, reply: reply}) {
+		return errors.New("room is closed")
+	}
+	_, err := r.wait(reply)
+	return err
+}
+
+func (r *Room) Attach(playerID, sessionID string, sender Sender, close Closer) error {
 	reply := make(chan roomResponse, 1)
 	if !r.send(roomMessage{
-		kind:      "attach",
+		kind:      messageAttach,
 		playerID:  playerID,
 		sessionID: sessionID,
 		sender:    sender,
@@ -81,23 +93,20 @@ func (r *Room) Attach(playerID string, sessionID string, sender Sender, close Cl
 	return err
 }
 
-// Detach releases a session. In an active match the player's seat remains
-// available for reconnect; in a lobby the actor releases it immediately.
-func (r *Room) Detach(playerID string, sessionID string) {
-	reply := make(chan roomResponse, 1)
-	if !r.send(roomMessage{kind: "detach", playerID: playerID, sessionID: sessionID, reply: reply}) {
-		return
-	}
-	_, _ = r.wait(reply)
+// Detach releases a session. The send is synchronous with actor receipt, so a
+// subsequent actor operation observes the detach even though no reply is needed.
+func (r *Room) Detach(playerID, sessionID string) {
+	_ = r.send(roomMessage{kind: messageDetach, playerID: playerID, sessionID: sessionID})
 }
 
-func (r *Room) RemovePlayerWithCommit(playerID string, commit func(domain.GameState) error) (domain.GameState, error) {
+// RemovePlayer releases a lobby seat and its reconnect credential atomically.
+func (r *Room) RemovePlayer(playerID string) error {
 	reply := make(chan roomResponse, 1)
-	if !r.send(roomMessage{kind: "remove_player", playerID: playerID, commit: commit, reply: reply}) {
-		return domain.GameState{}, errors.New("room is closed")
+	if !r.send(roomMessage{kind: messageRemovePlayer, playerID: playerID, reply: reply}) {
+		return errors.New("room is closed")
 	}
-	result, err := r.wait(reply)
-	return result.state, err
+	_, err := r.wait(reply)
+	return err
 }
 
 func (r *Room) Submit(command domain.Command) error {
@@ -110,7 +119,7 @@ func (r *Room) Submit(command domain.Command) error {
 // one, so a superseded connection cannot act.
 func (r *Room) SubmitForSession(sessionID string, command domain.Command) (domain.Projection, bool, error) {
 	reply := make(chan roomResponse, 1)
-	if !r.send(roomMessage{kind: "command", sessionID: sessionID, command: &command, reply: reply}) {
+	if !r.send(roomMessage{kind: messageCommand, sessionID: sessionID, command: &command, reply: reply}) {
 		return domain.Projection{}, false, errors.New("room is closed")
 	}
 	result, err := r.wait(reply)
@@ -119,7 +128,7 @@ func (r *Room) SubmitForSession(sessionID string, command domain.Command) (domai
 
 func (r *Room) Snapshot(playerID string) (domain.Projection, error) {
 	reply := make(chan roomResponse, 1)
-	if !r.send(roomMessage{kind: "snapshot", playerID: playerID, reply: reply}) {
+	if !r.send(roomMessage{kind: messageSnapshot, playerID: playerID, reply: reply}) {
 		return domain.Projection{}, errors.New("room is closed")
 	}
 	result, err := r.wait(reply)
@@ -140,6 +149,13 @@ func (r *Room) wait(reply <-chan roomResponse) (roomReply, error) {
 	case result := <-reply:
 		return result.reply, result.err
 	case <-r.done:
-		return roomReply{}, errors.New("room is closed")
+		// A room can retire immediately after placing its final response in the
+		// buffered reply channel. Prefer that result over a racing close signal.
+		select {
+		case result := <-reply:
+			return result.reply, result.err
+		default:
+			return roomReply{}, errors.New("room is closed")
+		}
 	}
 }

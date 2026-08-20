@@ -76,8 +76,8 @@ func TestCreateLobbyAndWebSocketProjection(t *testing.T) {
 		t.Fatalf("ack = %#v", ack)
 	}
 
-	// A browser close in the lobby releases the seat immediately, so the old
-	// reconnect credential is terminal rather than reserving that seat.
+	// A browser close in a one-player lobby retires the empty room. The old
+	// reconnect credential is terminal and the client should destroy the session.
 	_ = connection.Close()
 	time.Sleep(50 * time.Millisecond)
 	reconnected, _, err := websocket.DefaultDialer.Dial(wsURL, nil)
@@ -95,8 +95,8 @@ func TestCreateLobbyAndWebSocketProjection(t *testing.T) {
 	if err := reconnected.ReadJSON(&rejected); err != nil {
 		t.Fatal(err)
 	}
-	if rejected["type"] != "session.error" || rejected["status"] != float64(http.StatusUnauthorized) {
-		t.Fatalf("released lobby reconnect response = %#v, want unauthorized", rejected)
+	if rejected["type"] != "session.error" || rejected["status"] != float64(http.StatusGone) {
+		t.Fatalf("released lobby reconnect response = %#v, want gone", rejected)
 	}
 }
 
@@ -255,7 +255,7 @@ func TestJoinLobbySeatsPlayerAndAuthenticates(t *testing.T) {
 	if len(projection.Public.Players) != 2 {
 		t.Fatalf("expected 2 players in room, got: %#v", projection.Public.Players)
 	}
-	if err := store.ValidateReconnectToken(string(created.RoomID), string(joined.PlayerID), joined.ReconnectToken); err != nil {
+	if err := active.Authenticate(string(joined.PlayerID), joined.ReconnectToken); err != nil {
 		t.Fatal("server token did not authenticate:", err)
 	}
 }
@@ -341,9 +341,6 @@ func TestFivePlayerWebSocketMatchAndRematch(t *testing.T) {
 	if projection.Public.Phase != domain.PhaseRoleReveal {
 		t.Fatalf("start phase = %s, want %s", projection.Public.Phase, domain.PhaseRoleReveal)
 	}
-	// A started match refuses new seats. The live room is the only authority on
-	// that now, so the rejection surfaces as a join conflict rather than a
-	// vanished join code.
 	startedJoin, err := http.Post(server.URL+"/api/lobbies/join", "application/json", strings.NewReader(fmt.Sprintf(`{"join_code":%q,"player_name":"Latecomer"}`, host.JoinCode)))
 	if err != nil {
 		t.Fatal(err)
@@ -385,8 +382,6 @@ func TestFivePlayerWebSocketMatchAndRematch(t *testing.T) {
 		t.Fatalf("operation result projection = %#v", projection)
 	}
 	projection = sendCommandAndCollect(t, clients, active0, projection.Public.Version, domain.CommandOperationExplainDone, "explain", nil, nil)
-	// The rest of the table each receive an operation, separated by the timed
-	// interlude, before the room reaches its final discussion.
 	for step := 0; projection.Public.Phase != domain.PhaseDiscussion; step++ {
 		if step > 4*len(clients)+8 {
 			t.Fatalf("match never reached the final discussion, stuck in %s", projection.Public.Phase)
@@ -579,7 +574,6 @@ func TestWebSocketDiscussionTimerConfiguration(t *testing.T) {
 
 	initial := authenticateConnection(t, connection, lobbyResponse.ReconnectToken)
 
-	// Configure discussion timer to 420 seconds
 	if err := connection.WriteJSON(map[string]any{
 		"kind":                     domain.CommandSetDiscussionTimer,
 		"request_id":               "req-timer-1",

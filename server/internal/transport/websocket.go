@@ -15,8 +15,8 @@ import (
 
 // WebSocket authenticates one room session and translates frames to room commands.
 func (h *Handler) WebSocket(w http.ResponseWriter, r *http.Request) {
-	roomID := string(strings.TrimSpace(r.URL.Query().Get("room_id")))
-	playerID := string(strings.TrimSpace(r.URL.Query().Get("player_id")))
+	roomID := strings.TrimSpace(r.URL.Query().Get("room_id"))
+	playerID := strings.TrimSpace(r.URL.Query().Get("player_id"))
 	if roomID == "" || playerID == "" {
 		writeError(w, fault.New("room_id and player_id are required",
 			ftag.With(ftag.InvalidArgument),
@@ -24,10 +24,11 @@ func (h *Handler) WebSocket(w http.ResponseWriter, r *http.Request) {
 		))
 		return
 	}
+
 	upgrader := websocket.Upgrader{
 		ReadBufferSize:  1024,
 		WriteBufferSize: 1024,
-		CheckOrigin: func(request *http.Request) bool {
+		CheckOrigin: func(*http.Request) bool {
 			return true
 		},
 	}
@@ -37,6 +38,7 @@ func (h *Handler) WebSocket(w http.ResponseWriter, r *http.Request) {
 	}
 	ws.SetReadLimit(readLimit)
 	_ = ws.SetReadDeadline(time.Now().Add(authTimeout))
+
 	var auth authMessage
 	if err := readWebSocketJSON(ws, &auth); err != nil || auth.Kind != "room.auth" || strings.TrimSpace(auth.ReconnectToken) == "" {
 		writeSessionError(ws, fault.New("authentication is required",
@@ -57,6 +59,7 @@ func (h *Handler) WebSocket(w http.ResponseWriter, r *http.Request) {
 		connection.close()
 		return
 	}
+
 	sessionID := nextSessionID()
 	session, err := h.sessions.Attach(activeRoom, roomID, playerID, sessionID, connection.sendProjection, connection.close)
 	if err != nil {
@@ -80,10 +83,8 @@ func (h *Handler) WebSocket(w http.ResponseWriter, r *http.Request) {
 			}
 			continue
 		}
-		command := domain.Command{
-			RequestID: message.RequestID, ActorID: playerID, ExpectedVersion: message.ExpectedVersion,
-			Kind: domain.CommandKind(message.Kind), OperationKind: message.OperationKind, OperationEnabled: message.OperationEnabled, RoleID: message.RoleID, RoleEnabled: message.RoleEnabled, DiscussionTimerEnabled: message.DiscussionTimerEnabled, DiscussionSeconds: message.DiscussionSeconds, VirusCount: message.VirusCount, TargetID: string(message.TargetID), TargetIDs: toIDs(message.TargetIDs), Choice: message.Choice,
-		}
+
+		command := message.commandFor(playerID)
 		projection, replayed, commandErr := activeRoom.SubmitForSession(sessionID, command)
 		if replayed && commandErr == nil {
 			_ = connection.sendProjection(projection)
@@ -93,54 +94,52 @@ func (h *Handler) WebSocket(w http.ResponseWriter, r *http.Request) {
 			errorMessage = commandErr.Error()
 		}
 		_ = connection.sendJSON(map[string]any{
-			"type": "command.ack", "request_id": command.RequestID, "ok": commandErr == nil, "error": errorMessage,
+			"type":       "command.ack",
+			"request_id": command.RequestID,
+			"ok":         commandErr == nil,
+			"error":      errorMessage,
 		})
 	}
 }
 
 type authMessage struct {
-	// Kind must be room.auth for the first frame on a WebSocket connection.
-	Kind string `json:"type"`
-	// ReconnectToken authenticates the player identified by the query parameters.
+	Kind           string `json:"type"`
 	ReconnectToken string `json:"reconnect_token"`
 }
 
 type commandMessage struct {
-	// Kind selects the domain command or the room.resync control message.
-	Kind string `json:"kind"`
-	// RequestID makes command retries idempotent inside the room actor.
-	RequestID string `json:"request_id"`
-	// ExpectedVersion prevents a client from applying a command to stale state.
-	ExpectedVersion uint64 `json:"expected_version"`
-	// OperationKind identifies the operation being configured or resolved.
-	OperationKind string `json:"operation_kind"`
-	// OperationEnabled changes whether an operation is in the lobby pool.
-	OperationEnabled bool `json:"operation_enabled"`
-	// RoleID identifies the special role being configured.
-	RoleID string `json:"role_id"`
-	// RoleEnabled changes whether a special role is in the lobby pool.
-	RoleEnabled bool `json:"role_enabled"`
-	// DiscussionTimerEnabled controls the lobby's discussion timer setting.
-	DiscussionTimerEnabled bool `json:"discussion_timer_enabled"`
-	// DiscussionSeconds sets how many seconds the discussion runs for.
-	DiscussionSeconds int `json:"discussion_seconds"`
-	// VirusCount controls how many players begin on the VIRUS faction.
-	VirusCount int `json:"virus_count"`
-	// TargetID is the single target selected by a command.
-	TargetID string `json:"target_id"`
-	// TargetIDs contains the targets for operations that select multiple players.
-	TargetIDs []string `json:"target_ids"`
-	// Choice carries a command-specific choice such as STAY or DEFECT.
-	Choice string `json:"choice"`
+	Kind                   string   `json:"kind"`
+	RequestID              string   `json:"request_id"`
+	ExpectedVersion        uint64   `json:"expected_version"`
+	OperationKind          string   `json:"operation_kind"`
+	OperationEnabled       bool     `json:"operation_enabled"`
+	RoleID                 string   `json:"role_id"`
+	RoleEnabled            bool     `json:"role_enabled"`
+	DiscussionTimerEnabled bool     `json:"discussion_timer_enabled"`
+	DiscussionSeconds      int      `json:"discussion_seconds"`
+	VirusCount             int      `json:"virus_count"`
+	TargetID               string   `json:"target_id"`
+	TargetIDs              []string `json:"target_ids"`
+	Choice                 string   `json:"choice"`
 }
 
-func toIDs(values []string) []string {
-	if len(values) == 0 {
-		return nil
+// commandFor is the trust boundary between the wire protocol and the domain.
+// ActorID is server-derived and can never be supplied by a client frame.
+func (m commandMessage) commandFor(playerID string) domain.Command {
+	return domain.Command{
+		RequestID:              m.RequestID,
+		ActorID:                playerID,
+		ExpectedVersion:        m.ExpectedVersion,
+		Kind:                   domain.CommandKind(m.Kind),
+		OperationKind:          m.OperationKind,
+		OperationEnabled:       m.OperationEnabled,
+		RoleID:                 m.RoleID,
+		RoleEnabled:            m.RoleEnabled,
+		DiscussionTimerEnabled: m.DiscussionTimerEnabled,
+		DiscussionSeconds:      m.DiscussionSeconds,
+		VirusCount:             m.VirusCount,
+		TargetID:               m.TargetID,
+		TargetIDs:              append([]string(nil), m.TargetIDs...),
+		Choice:                 m.Choice,
 	}
-	ids := make([]string, 0, len(values))
-	for _, value := range values {
-		ids = append(ids, string(value))
-	}
-	return ids
 }

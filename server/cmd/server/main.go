@@ -7,14 +7,18 @@ import (
 	"time"
 
 	"tripleagent/server/internal/admission"
+	"tripleagent/server/internal/app"
 	"tripleagent/server/internal/room"
 	"tripleagent/server/internal/transport"
 )
 
 func main() {
-	store := admission.NewStore()
+	admissions := admission.NewStore()
+	rooms := room.NewManager()
+	lobbies := app.NewLobbies(admissions, rooms)
+	sessions := app.NewSessions(rooms)
 
-	handler := transport.NewHandler(store, room.NewManager())
+	handler := transport.NewHandlerWithServices(lobbies, sessions)
 	mux := http.NewServeMux()
 	handler.RegisterRoutes(mux)
 

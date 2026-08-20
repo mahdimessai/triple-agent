@@ -18,15 +18,18 @@ const (
 )
 
 type Handler struct {
-	// lobbies handles HTTP operations that create, join, and leave rooms.
-	lobbies *app.Lobbies
-	// sessions handles reconnect authentication and live room attachment.
+	lobbies  *app.Lobbies
 	sessions *app.Sessions
 }
 
+// NewHandler is retained for existing tests and callers. New process entry
+// points should compose dependencies themselves and use NewHandlerWithServices.
 func NewHandler(admit *admission.Store, rooms *room.Manager) *Handler {
-	return &Handler{
-		lobbies:  app.NewLobbies(admit, rooms),
-		sessions: app.NewSessions(admit, rooms),
-	}
+	return NewHandlerWithServices(app.NewLobbies(admit, rooms), app.NewSessions(rooms))
+}
+
+// NewHandlerWithServices keeps transport focused on HTTP/WebSocket mechanics;
+// the process composition root decides which application services it receives.
+func NewHandlerWithServices(lobbies *app.Lobbies, sessions *app.Sessions) *Handler {
+	return &Handler{lobbies: lobbies, sessions: sessions}
 }

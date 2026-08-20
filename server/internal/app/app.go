@@ -5,11 +5,11 @@ import (
 	"tripleagent/server/internal/room"
 )
 
-// Lobbies covers the room's entry points: creating one, joining one, leaving one.
+// Lobbies coordinates cross-room admission with one live room actor.
 type Lobbies struct {
-	// admit owns cross-room join codes, credentials, and idempotent join claims.
+	// admit owns only the global join-code index.
 	admit *admission.Store
-	// rooms owns live room actors and their game state.
+	// rooms owns live room actors, including seats and reconnect credentials.
 	rooms *room.Manager
 }
 
@@ -19,12 +19,9 @@ func NewLobbies(admit *admission.Store, rooms *room.Manager) *Lobbies {
 
 // Sessions covers one player's live connection to a room they already belong to.
 type Sessions struct {
-	// admit authenticates reconnect credentials and revokes them on seat release.
-	admit *admission.Store
-	// rooms resolves authenticated room IDs to their live actors.
 	rooms *room.Manager
 }
 
-func NewSessions(admit *admission.Store, rooms *room.Manager) *Sessions {
-	return &Sessions{admit: admit, rooms: rooms}
+func NewSessions(rooms *room.Manager) *Sessions {
+	return &Sessions{rooms: rooms}
 }

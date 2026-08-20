@@ -10,7 +10,7 @@ import (
 func benchmarkRoomState(playerCount int) domain.GameState {
 	state := domain.NewLobby("room-benchmark", "player-0", "Player 0", domain.DefaultRoomSettings())
 	for i := 1; i < playerCount; i++ {
-		id := string("player-" + strconv.Itoa(i))
+		id := "player-" + strconv.Itoa(i)
 		if err := state.AddPlayer(id, "Player "+strconv.Itoa(i)); err != nil {
 			panic(err)
 		}
@@ -38,12 +38,12 @@ func BenchmarkBroadcastSevenPlayerRoomBefore(b *testing.B) {
 
 func BenchmarkBroadcastSevenPlayerRoomAfter(b *testing.B) {
 	state := benchmarkRoomState(7)
-	sessions := benchmarkRoomSessions(state)
+	runtime := runtimeState{game: state, sessions: benchmarkRoomSessions(state)}
 	r := &Room{}
 	b.ReportAllocs()
 	b.ResetTimer()
 	for i := 0; i < b.N; i++ {
-		r.broadcast(&state, sessions)
+		r.broadcast(&runtime)
 	}
 }
 
