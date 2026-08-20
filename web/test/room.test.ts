@@ -1,7 +1,7 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { connectRoom, type RoomSocketEvent } from "../app/_game/room";
-import type { RoomIdentity } from "../app/_game/protocol";
+import { connectRoom, type RoomSocketEvent } from "../features/triple-agent/transport/room-socket";
+import type { RoomIdentity } from "../features/triple-agent/protocol";
 
 type Listener = (event: { data?: unknown }) => void;
 

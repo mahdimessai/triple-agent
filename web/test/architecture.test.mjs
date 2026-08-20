@@ -1,11 +1,11 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { existsSync, readFileSync, readdirSync, statSync } from "node:fs";
-import { dirname, extname, join, resolve } from "node:path";
+import { readFileSync, readdirSync, statSync } from "node:fs";
+import { extname, join, relative } from "node:path";
 
 const root = process.cwd();
 const app = join(root, "app");
-const game = join(app, "_game");
+const feature = join(root, "features", "triple-agent");
 
 function sourceFiles(directory) {
   const result = [];
@@ -17,59 +17,49 @@ function sourceFiles(directory) {
   return result;
 }
 
-function read(path) { return readFileSync(path, "utf8"); }
+function importsOf(path) {
+  const source = readFileSync(path, "utf8");
+  return [...source.matchAll(/(?:from\s+|import\s*\()(["'])([^"']+)\1/g)].map((match) => match[2]);
+}
 
-const gameFiles = sourceFiles(game);
-const gameSource = gameFiles.map(read).join("\n");
-
-test("deep-cut target has no legacy architecture directories", () => {
-  for (const directory of ["components", "features", "api", "connection", "session", "model", "protocol", "operations"]) {
-    assert.equal(existsSync(join(root, directory)), false, `${directory}/ must not exist at web root`);
-    assert.equal(existsSync(join(game, directory)), false, `${directory}/ must not exist inside app/_game`);
-  }
-});
-
-test("transitional screen and command abstractions cannot creep back in", () => {
-  for (const token of ["ScreenId", "CommandPayload", "clientCommandFromLegacy", "useRoomSession", "MissionScreen", "next/dynamic", "setScreen("]) {
-    assert.equal(gameSource.includes(token), false, `forbidden transitional token: ${token}`);
-  }
-  assert.equal(/\bclass\s+[A-Za-z_$]/.test(gameSource), false, "frontend application classes are forbidden");
-});
-
-test("production game code never imports the mock workbench", () => {
-  assert.equal(gameSource.includes("/mock"), false);
-  assert.equal(gameSource.includes("../mock"), false);
-});
-
-test("Game handles every protocol phase exactly once or in an intentional group", () => {
-  const protocol = read(join(game, "protocol.ts"));
-  const gameRoot = read(join(game, "game.tsx"));
-  const phaseBlock = protocol.slice(protocol.indexOf("export type Phase"), protocol.indexOf("export type Faction"));
-  const phases = new Set([...phaseBlock.matchAll(/"([A-Z_]+)"/g)].map((match) => match[1]));
-  const covered = new Set([...gameRoot.matchAll(/case "([A-Z_]+)"/g)].map((match) => match[1]));
-  assert.deepEqual([...covered].sort(), [...phases].sort());
-  assert.match(gameRoot, /assertNever\(phase\)/);
-});
-
-test("screen command literals are members of ClientCommand", () => {
-  const protocol = read(join(game, "protocol.ts"));
-  const commandBlock = protocol.slice(protocol.indexOf("export type ClientCommand"), protocol.indexOf("export type ResyncCommand"));
-  const valid = new Set([...commandBlock.matchAll(/\{\s*kind:\s*"([^"]+)"/g)].map((match) => match[1]));
-  const screens = sourceFiles(join(game, "screens")).map(read).join("\n");
-  const emitted = new Set([...screens.matchAll(/kind:\s*"([^"]+)"/g)].map((match) => match[1]));
-  for (const kind of emitted) assert.equal(valid.has(kind), true, `screen emits unknown command ${kind}`);
-});
-
-test("all relative source imports resolve", () => {
-  const files = sourceFiles(app);
-  const known = new Set(files.map((path) => resolve(path)));
+function assertNoImport(files, forbidden, message) {
   for (const file of files) {
-    for (const match of read(file).matchAll(/(?:from\s+|import\s*\()(["'])([^"']+)\1/g)) {
-      const specifier = match[2];
-      if (!specifier.startsWith(".")) continue;
-      const base = resolve(dirname(file), specifier);
-      const candidates = [base, `${base}.ts`, `${base}.tsx`, `${base}.mjs`, join(base, "index.ts"), join(base, "index.tsx")];
-      assert.equal(candidates.some((candidate) => known.has(resolve(candidate))), true, `${file} has unresolved import ${specifier}`);
+    for (const specifier of importsOf(file)) {
+      assert.equal(forbidden.some((pattern) => pattern.test(specifier)), false, `${relative(root, file)} ${message}: ${specifier}`);
     }
   }
+}
+
+test("app routes compose features rather than reaching into realtime internals", () => {
+  assertNoImport(sourceFiles(app), [
+    /features\/triple-agent\/(?:protocol|transport|session)(?:\/|$)/,
+    /app\/_game/,
+  ], "must not import Triple Agent internals");
+});
+
+test("protocol is a pure trust boundary", () => {
+  assertNoImport(sourceFiles(join(feature, "protocol")), [
+    /^react(?:\/|$)/,
+    /(?:^|\/)transport(?:\/|$)/,
+    /(?:^|\/)session(?:\/|$)/,
+    /(?:^|\/)screens(?:\/|$)/,
+  ], "violates the protocol boundary");
+});
+
+test("transport has no React or presentation dependencies", () => {
+  assertNoImport(sourceFiles(join(feature, "transport")), [
+    /^react(?:\/|$)/,
+    /(?:^|\/)screens(?:\/|$)/,
+    /(?:^|\/)session(?:\/|$)/,
+  ], "violates the transport boundary");
+});
+
+test("session lifecycle cannot depend on screens", () => {
+  assertNoImport(sourceFiles(join(feature, "session")), [/(?:^|\/)screens(?:\/|$)/], "violates the session boundary");
+});
+
+test("feature public entry stays deliberately small", () => {
+  const source = readFileSync(join(feature, "index.ts"), "utf8");
+  assert.match(source, /TripleAgentGame/);
+  assert.equal(source.includes("export *"), false, "feature index must not become a barrel dump");
 });

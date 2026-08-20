@@ -1,6 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { isRoomIdentity, parseRoomServerMessage, type RoomProjection } from "../app/_game/protocol";
+import { isRoomIdentity, parseRoomServerMessage, type RoomProjection } from "../features/triple-agent/protocol";
 
 function projection(): RoomProjection {
   return {
