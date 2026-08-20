@@ -7,6 +7,7 @@ on:
   pull_request:
     branches:
       - mahdi
+      - chatgpt/triple-agent-refactor-20260820
   workflow_dispatch:
 
 permissions:
@@ -21,12 +22,15 @@ jobs:
 
       - name: Create source archive
         run: |
-          zip -r /tmp/triple-agent-source.zip . -x '.git/*' '.git/**'
+          zip -r /tmp/triple-agent-refactor.zip . \
+            -x '.git/*' '.git/**' \
+            -x '.github/workflows/export-source.yml' \
+            -x '.verify-trigger'
 
       - name: Upload source archive
         uses: actions/upload-artifact@v4
         with:
-          name: triple-agent-source
-          path: /tmp/triple-agent-source.zip
+          name: triple-agent-refactor
+          path: /tmp/triple-agent-refactor.zip
           if-no-files-found: error
           retention-days: 1
