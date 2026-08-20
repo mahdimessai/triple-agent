@@ -30,7 +30,7 @@ type lobbyResponse struct {
 func (h *handler) createLobby(w http.ResponseWriter, r *http.Request) {
 	var request createLobbyRequest
 	if err := decodeJSON(w, r, &request); err != nil {
-		writeHTTPError(w, err)
+		h.writeHTTPError(w, r, err)
 		return
 	}
 	name := strings.TrimSpace(request.PlayerName)
@@ -40,16 +40,17 @@ func (h *handler) createLobby(w http.ResponseWriter, r *http.Request) {
 	}
 	created, err := h.rooms.Create(name)
 	if err != nil {
-		writeHTTPError(w, err)
+		h.writeHTTPError(w, r, err)
 		return
 	}
+	h.logger.Info("room created", "room_id", created.RoomID, "player_id", created.PlayerID)
 	writeJSON(w, http.StatusCreated, lobbyResponse{RoomID: created.RoomID, JoinCode: created.JoinCode, PlayerID: created.PlayerID, ReconnectToken: created.ReconnectToken})
 }
 
 func (h *handler) joinLobby(w http.ResponseWriter, r *http.Request) {
 	var request joinLobbyRequest
 	if err := decodeJSON(w, r, &request); err != nil {
-		writeHTTPError(w, err)
+		h.writeHTTPError(w, r, err)
 		return
 	}
 	code := strings.ToUpper(strings.TrimSpace(request.JoinCode))
@@ -64,16 +65,17 @@ func (h *handler) joinLobby(w http.ResponseWriter, r *http.Request) {
 	}
 	joined, err := h.rooms.Join(code, name)
 	if err != nil {
-		writeHTTPError(w, err)
+		h.writeHTTPError(w, r, err)
 		return
 	}
+	h.logger.Info("player joined room", "room_id", joined.RoomID, "player_id", joined.PlayerID)
 	writeJSON(w, http.StatusCreated, lobbyResponse{RoomID: joined.RoomID, JoinCode: joined.JoinCode, PlayerID: joined.PlayerID, ReconnectToken: joined.ReconnectToken})
 }
 
 func (h *handler) leaveLobby(w http.ResponseWriter, r *http.Request) {
 	var request leaveLobbyRequest
 	if err := decodeJSON(w, r, &request); err != nil {
-		writeHTTPError(w, err)
+		h.writeHTTPError(w, r, err)
 		return
 	}
 	if strings.TrimSpace(request.RoomID) == "" || strings.TrimSpace(request.PlayerID) == "" || strings.TrimSpace(request.ReconnectToken) == "" {
@@ -81,8 +83,9 @@ func (h *handler) leaveLobby(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if err := h.rooms.Leave(request.RoomID, request.PlayerID, request.ReconnectToken); err != nil {
-		writeHTTPError(w, err)
+		h.writeHTTPError(w, r, err)
 		return
 	}
+	h.logger.Info("player left room", "room_id", request.RoomID, "player_id", request.PlayerID)
 	writeJSON(w, http.StatusOK, map[string]bool{"left": true})
 }
