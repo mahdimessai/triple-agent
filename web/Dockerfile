@@ -5,10 +5,10 @@ FROM oven/bun:1-alpine AS builder
 WORKDIR /app
 ENV NEXT_TELEMETRY_DISABLED=1
 
-COPY package.json bun.lock* ./
+COPY web/package.json web/bun.lock* ./
 RUN bun install --frozen-lockfile
 
-COPY . .
+COPY web/ .
 
 ARG NEXT_PUBLIC_TRIPLE_AGENT_API_URL=http://localhost:8080
 ENV NEXT_PUBLIC_TRIPLE_AGENT_API_URL=$NEXT_PUBLIC_TRIPLE_AGENT_API_URL
