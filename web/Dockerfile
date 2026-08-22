@@ -32,4 +32,6 @@ COPY --from=builder --chown=bunjs:bunjs /app/.next/static ./.next/static
 USER bunjs
 EXPOSE 3000
 
-CMD ["bun", "server.js"]
+# Railway injects PORT=8080 for this service. Keep the public web service on
+# the port declared above so Railway's proxy and the process agree.
+CMD ["sh", "-c", "PORT=3000 bun server.js"]
