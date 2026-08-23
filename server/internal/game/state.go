@@ -79,7 +79,7 @@ type Settings struct {
 	EnabledRoles           map[string]bool `json:"enabled_roles"`
 }
 
-func DefaultSettings() Settings {
+func defaultSettings() Settings {
 	return Settings{
 		MinPlayers:             5,
 		MaxPlayers:             9,

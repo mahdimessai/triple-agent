@@ -5,20 +5,11 @@ import (
 	"time"
 )
 
-func NewLobby(hostID, hostName string, settings Settings) State {
-	if settings.MinPlayers == 0 {
-		settings = DefaultSettings()
-	}
-	if settings.EnabledOperations == nil {
-		settings.EnabledOperations = defaultEnabledOperations()
-	}
-	if settings.EnabledRoles == nil {
-		settings.EnabledRoles = defaultEnabledRoles()
-	}
+func NewLobby(hostID, hostName string) State {
 	hostName = strings.TrimSpace(hostName)
 	return State{
 		HostID:      hostID,
-		Settings:    settings,
+		Settings:    defaultSettings(),
 		Phase:       PhaseLobby,
 		Players:     map[string]Player{hostID: {ID: hostID, Name: hostName, Connected: true, CanVote: true, VotingPower: 1}},
 		PlayerOrder: []string{hostID},
