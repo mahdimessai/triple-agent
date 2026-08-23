@@ -28,28 +28,27 @@ func NewRegistry() *Registry {
 }
 
 func (r *Registry) Create(playerName string) (Identity, error) {
-	for {
-		roomID := "room_" + randomHex(6)
-		playerID := "player_" + randomHex(6)
-		token := randomHex(24)
-		joinCode := newJoinCode()
-		state := game.NewLobby(playerID, strings.TrimSpace(playerName), game.DefaultSettings())
-		active := newRoom(roomID, state, map[string]string{playerID: token}, func(closed *Room) {
-			r.remove(roomID, joinCode, closed)
-		})
+	roomID := "room_" + randomHex(6)
+	playerID := "player_" + randomHex(6)
+	token := randomHex(24)
+	joinCode := newJoinCode()
 
-		r.mu.Lock()
-		_, roomTaken := r.rooms[roomID]
-		_, codeTaken := r.codes[codeKey(joinCode)]
-		if !roomTaken && !codeTaken {
-			r.rooms[roomID] = active
-			r.codes[codeKey(joinCode)] = roomID
-			r.mu.Unlock()
-			return Identity{RoomID: roomID, JoinCode: joinCode, PlayerID: playerID, ReconnectToken: token}, nil
-		}
-		r.mu.Unlock()
-		active.Close()
-	}
+	state := game.NewLobby(playerID, strings.TrimSpace(playerName))
+	active := newRoom(roomID, state, map[string]string{playerID: token}, func(closed *Room) {
+		r.remove(roomID, joinCode, closed)
+	})
+
+	r.mu.Lock()
+	r.rooms[roomID] = active
+	r.codes[joinCode] = roomID
+	r.mu.Unlock()
+
+	return Identity{
+		RoomID:         roomID,
+		JoinCode:       joinCode,
+		PlayerID:       playerID,
+		ReconnectToken: token,
+	}, nil
 }
 
 func (r *Registry) Join(joinCode, playerName string) (Identity, error) {
@@ -113,5 +112,3 @@ func (r *Registry) remove(roomID, joinCode string, expected *Room) {
 		delete(r.codes, key)
 	}
 }
-
-

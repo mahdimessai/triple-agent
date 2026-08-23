@@ -6,14 +6,15 @@ import (
 	"strings"
 )
 
+// generate the room code
 func newJoinCode() string {
-	const alphabet = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789"
+	const chars = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789"
 	bytes := make([]byte, 6)
 	if _, err := rand.Read(bytes); err != nil {
 		panic(err)
 	}
 	for i := range bytes {
-		bytes[i] = alphabet[int(bytes[i])%len(alphabet)]
+		bytes[i] = chars[int(bytes[i])%len(chars)]
 	}
 	return string(bytes)
 }
