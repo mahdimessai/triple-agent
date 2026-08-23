@@ -84,7 +84,7 @@ func TestExplicitLeaveRemovesSoleLobbyPlayerAndJoinCode(t *testing.T) {
 }
 
 func TestStaleDetachDoesNotDisconnectReplacementSession(t *testing.T) {
-	state := game.NewLobby("p1", "Host", game.DefaultSettings())
+	state := game.NewLobby("p1", "Host")
 	active := newRoom("room", state, map[string]string{"p1": "token"}, nil)
 	defer active.Close()
 	var oldClosed atomic.Bool
@@ -108,7 +108,7 @@ func TestStaleDetachDoesNotDisconnectReplacementSession(t *testing.T) {
 }
 
 func TestCommandRejectsStaleVersionAndStaleSession(t *testing.T) {
-	state := game.NewLobby("p1", "Host", game.DefaultSettings())
+	state := game.NewLobby("p1", "Host")
 	active := newRoom("room", state, map[string]string{"p1": "token"}, nil)
 	defer active.Close()
 	if err := active.Attach("p1", "token", "s1", func(game.Projection) error { return nil }, nil); err != nil {
@@ -140,8 +140,7 @@ func TestCommandRejectsStaleVersionAndStaleSession(t *testing.T) {
 }
 
 func TestFailedSenderDisconnectsPlayerAndBroadcastsConvergence(t *testing.T) {
-	settings := game.DefaultSettings()
-	state := game.NewLobby("p1", "Host", settings)
+	state := game.NewLobby("p1", "Host")
 	var err error
 	state, err = game.AddPlayer(state, "p2", "Guest")
 	if err != nil {
@@ -204,7 +203,7 @@ func TestFailedSenderDisconnectsPlayerAndBroadcastsConvergence(t *testing.T) {
 }
 
 func TestInGameDisconnectRetainsTokenForReconnect(t *testing.T) {
-	state := game.NewLobby("p1", "Host", game.DefaultSettings())
+	state := game.NewLobby("p1", "Host")
 	state.Phase = game.PhaseDiscussion
 	active := newRoom("room", state, map[string]string{"p1": "token"}, nil)
 	defer active.Close()
@@ -229,7 +228,7 @@ func TestInGameDisconnectRetainsTokenForReconnect(t *testing.T) {
 }
 
 func TestRoomExpiryRunsRegistryCleanup(t *testing.T) {
-	state := game.NewLobby("p1", "Host", game.DefaultSettings())
+	state := game.NewLobby("p1", "Host")
 	closed := make(chan struct{})
 	active := newRoomWithLifetimes("room", state, map[string]string{"p1": "token"}, func(*Room) { close(closed) }, 5*time.Millisecond, 5*time.Millisecond)
 	defer active.Close()
@@ -241,7 +240,7 @@ func TestRoomExpiryRunsRegistryCleanup(t *testing.T) {
 }
 
 func TestConcurrentCloseIsSafe(t *testing.T) {
-	state := game.NewLobby("p1", "Host", game.DefaultSettings())
+	state := game.NewLobby("p1", "Host")
 	active := newRoom("room", state, map[string]string{"p1": "token"}, nil)
 	var wg sync.WaitGroup
 	for i := 0; i < 32; i++ {
@@ -259,7 +258,7 @@ func TestConcurrentCloseIsSafe(t *testing.T) {
 }
 
 func TestJoinCannotCreatePlayerWithoutCredential(t *testing.T) {
-	state := game.NewLobby("p1", "Host", game.DefaultSettings())
+	state := game.NewLobby("p1", "Host")
 	active := newRoom("room", state, map[string]string{"p1": "token"}, nil)
 	defer active.Close()
 	if err := active.Join("p2", "Guest", ""); !errors.Is(err, ErrUnauthorized) {

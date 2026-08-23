@@ -27,24 +27,23 @@ func newGameFixture(t *testing.T, opts fixtureOptions) *gameFixture {
 		t.Fatal("fixture requires at least one player")
 	}
 
-	settings := DefaultSettings()
-	settings.MinPlayers = opts.PlayerCount
-	settings.MaxPlayers = opts.PlayerCount
-	settings.VirusCount = opts.VirusCount
+	state := NewLobby("p1", "P1")
+	state.Settings.MinPlayers = opts.PlayerCount
+	state.Settings.MaxPlayers = opts.PlayerCount
+	state.Settings.VirusCount = opts.VirusCount
 	if opts.EnabledOperations != nil {
-		settings.EnabledOperations = make(map[string]bool, len(opts.EnabledOperations))
+		state.Settings.EnabledOperations = make(map[string]bool, len(opts.EnabledOperations))
 		for _, id := range opts.EnabledOperations {
-			settings.EnabledOperations[id] = true
+			state.Settings.EnabledOperations[id] = true
 		}
 	}
 	if opts.EnabledRoles != nil {
-		settings.EnabledRoles = make(map[string]bool, len(opts.EnabledRoles))
+		state.Settings.EnabledRoles = make(map[string]bool, len(opts.EnabledRoles))
 		for _, role := range opts.EnabledRoles {
-			settings.EnabledRoles[string(role)] = true
+			state.Settings.EnabledRoles[string(role)] = true
 		}
 	}
 
-	state := NewLobby("p1", "P1", settings)
 	if opts.Seed != 0 {
 		state.RandomState = opts.Seed
 	} else {

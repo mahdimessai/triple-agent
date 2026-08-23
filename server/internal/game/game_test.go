@@ -8,9 +8,8 @@ import (
 
 func testLobby(t *testing.T, count int) State {
 	t.Helper()
-	settings := DefaultSettings()
-	settings.MinPlayers = count
-	state := NewLobby("p1", "P1", settings)
+	state := NewLobby("p1", "P1")
+	state.Settings.MinPlayers = count
 	state.RandomState = 1
 	for i := 2; i <= count; i++ {
 		id := "p" + string(rune('0'+i))
@@ -77,7 +76,7 @@ func TestPlayerSeatsAreDerivedFromOrder(t *testing.T) {
 }
 
 func TestDuplicatePlayerIDIsRejected(t *testing.T) {
-	state := NewLobby("p1", "Host", DefaultSettings())
+	state := NewLobby("p1", "Host")
 	_, err := AddPlayer(state, "p1", "Again")
 	if !errors.Is(err, ErrPlayerExists) {
 		t.Fatalf("got %v, want ErrPlayerExists", err)
@@ -85,7 +84,7 @@ func TestDuplicatePlayerIDIsRejected(t *testing.T) {
 }
 
 func TestReadyDoesNotCreatePresence(t *testing.T) {
-	state := NewLobby("p1", "Host", DefaultSettings())
+	state := NewLobby("p1", "Host")
 	state, err := AddPlayer(state, "p2", "P2")
 	if err != nil {
 		t.Fatal(err)
@@ -104,7 +103,7 @@ func TestReadyDoesNotCreatePresence(t *testing.T) {
 }
 
 func TestConnectAndDisconnectAreVersioned(t *testing.T) {
-	state := NewLobby("p1", "Host", DefaultSettings())
+	state := NewLobby("p1", "Host")
 	state, err := AddPlayer(state, "p2", "P2")
 	if err != nil {
 		t.Fatal(err)
