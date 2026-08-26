@@ -1,44 +1,40 @@
-.PHONY: dev prod dev-docker prod-docker
+.PHONY: dev server web build test verify format format-check docker-dev docker
 
-UNAME := $(shell uname -s 2>/dev/null)
-
-ifeq ($(UNAME),)
-ifeq ($(OS),Windows_NT)
-USE_POWERSHELL := 1
-endif
-endif
-
-ifeq ($(USE_POWERSHELL),1)
-
-SHELL := pwsh.exe
-.SHELLFLAGS := -NoProfile -Command
+GOFUMPT := go tool gofumpt
 
 dev:
-	@$$go = Start-Process go -ArgumentList 'run','./server/cmd/server' -NoNewWindow -PassThru; $$web = Start-Process npm.cmd -ArgumentList 'run','dev' -NoNewWindow -PassThru; try { while (-not $$go.HasExited -and -not $$web.HasExited) { Start-Sleep -Milliseconds 200 }; $$exitCode = 0; if ($$go.HasExited -and $$go.ExitCode -ne 0) { $$exitCode = $$go.ExitCode }; if ($$web.HasExited -and $$web.ExitCode -ne 0) { $$exitCode = $$web.ExitCode }; if ($$exitCode -ne 0) { exit $$exitCode } } finally { if ($$go -and -not $$go.HasExited) { taskkill.exe /PID $$go.Id /T /F | Out-Null }; if ($$web -and -not $$web.HasExited) { taskkill.exe /PID $$web.Id /T /F | Out-Null } }
+	@make -j 2 server web
 
-prod:
-	@$$go = Start-Process go -ArgumentList 'run','./server/cmd/server' -NoNewWindow -PassThru; try { & npm.cmd run build; if ($$LASTEXITCODE -ne 0) { exit $$LASTEXITCODE }; Wait-Process -Id $$go.Id; if ($$go.ExitCode -ne 0) { exit $$go.ExitCode } } finally { if ($$go -and -not $$go.HasExited) { taskkill.exe /PID $$go.Id /T /F | Out-Null } }
+server:
+	go run ./server/cmd/tripleagent
 
-else
+web:
+	bun run --cwd web dev
 
-dev:
-	@set -e; \
-		go run ./server/cmd/server & go_pid=$$!; \
-		npm run dev & web_pid=$$!; \
-		trap 'kill $$go_pid $$web_pid 2>/dev/null || true' INT TERM EXIT; \
-		wait $$go_pid $$web_pid
+build:
+	bun run --cwd web build
 
-prod:
-	@set -e; \
-		go run ./server/cmd/server & go_pid=$$!; \
-		trap 'kill $$go_pid 2>/dev/null || true' INT TERM EXIT; \
-		npm run build; \
-		wait $$go_pid
+test:
+	go test ./server/...
+	bun --cwd web test
 
-endif
+verify:
+	go test ./server/...
+	bun run --cwd web verify
 
-dev-docker:
-	@docker compose -f docker-compose.yml -f docker-compose.dev.yml up --build
+format:
+	$(GOFUMPT) -w .
 
-prod-docker:
-	@docker compose up --build
+format-check:
+	@files=$$( $(GOFUMPT) -l . ); \
+	if [ -n "$$files" ]; then \
+		echo "Go files need formatting:"; \
+		echo "$$files"; \
+		exit 1; \
+	fi
+
+docker-dev:
+	docker compose -f docker-compose.yml -f docker-compose.dev.yml up --build
+
+docker:
+	docker compose up --build

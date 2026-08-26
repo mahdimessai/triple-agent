@@ -1,5 +1,5 @@
-import { MockWorkbench } from "@/components/triple-agent/mock/MockWorkbench";
+import { MockFixtures } from "./fixtures";
 
 export default function MockPage() {
-  return <MockWorkbench />;
+  return <MockFixtures />;
 }

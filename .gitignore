@@ -42,14 +42,17 @@ npm-debug.log*
 yarn-debug.log*
 yarn-error.log*
 pnpm-debug.log*
+bun-debug.log*
 lerna-debug.log*
 
-# Node / Web (Next.js / TypeScript)
+# Node / Bun / Web (Next.js / TypeScript)
 node_modules/
+.bun/
 dist/
 build/
 out/
 .next/
+.test-dist/
 *.tsbuildinfo
 next-env.d.ts
 coverage/
