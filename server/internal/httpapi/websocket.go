@@ -1,6 +1,7 @@
 package httpapi
 
 import (
+	"bytes"
 	"encoding/json"
 	"errors"
 	"net/http"
@@ -52,51 +53,108 @@ type commandAck struct {
 	Code      string `json:"code,omitempty"`
 }
 
+type sessionAuthenticatedResponse struct {
+	Type string `json:"type"`
+}
+
+type sessionErrorResponse struct {
+	Type   string `json:"type"`
+	Status int    `json:"status"`
+	Error  string `json:"error"`
+	Code   string `json:"code,omitempty"`
+}
+
+type outboundKind uint8
+
+const (
+	outboundAuthenticated outboundKind = iota
+	outboundProjection
+	outboundCommandAck
+)
+
+type outboundMessage struct {
+	kind       outboundKind
+	projection game.Projection
+	ack        commandAck
+}
+
+type wsSession struct {
+	id        string
+	conn      *connection
+	firstSend bool
+}
+
+func (s *wsSession) ID() string {
+	return s.id
+}
+
+func (s *wsSession) Send(projection game.Projection) error {
+	if s.firstSend {
+		s.firstSend = false
+		if err := s.conn.enqueue(outboundMessage{kind: outboundAuthenticated}); err != nil {
+			return err
+		}
+	}
+	return s.conn.enqueue(outboundMessage{kind: outboundProjection, projection: projection})
+}
+
+func (s *wsSession) Close() {
+	s.conn.close()
+}
+
 func (h *handler) websocket(w http.ResponseWriter, r *http.Request) {
-	roomID := strings.TrimSpace(r.URL.Query().Get("room_id"))
-	playerID := strings.TrimSpace(r.URL.Query().Get("player_id"))
-	if roomID == "" || playerID == "" {
-		writeJSON(w, http.StatusBadRequest, errorResponse{Error: "Room ID and player ID are required.", Code: "session_identity_required"})
+	joinCode := strings.ToUpper(strings.TrimSpace(r.URL.Query().Get("join_code")))
+	if joinCode == "" {
+		writeHTTPError(w, newAPIError(http.StatusBadRequest, "session_identity_required", "Join code is required."))
 		return
 	}
+	active, ok := h.roomManager.GetByCode(joinCode)
+	if !ok {
+		writeHTTPError(w, newAPIError(http.StatusNotFound, "room_not_found", "Lobby not found."))
+		return
+	}
+
 	ws, err := h.upgrader.Upgrade(w, r, nil)
 	if err != nil {
 		return
 	}
 	ws.SetReadLimit(readLimit)
 	_ = ws.SetReadDeadline(time.Now().Add(authTimeout))
+
 	var auth authMessage
 	if err := readWebSocketJSON(ws, &auth); err != nil || auth.Kind != "room.auth" || strings.TrimSpace(auth.ReconnectToken) == "" {
-		writeSessionError(ws, http.StatusUnauthorized, "unauthorized", "Authentication is required.")
-		return
-	}
-	active, ok := h.rooms.Get(roomID)
-	if !ok {
-		writeSessionError(ws, http.StatusGone, "room_gone", "Room is no longer available.")
+		writeSessionError(ws, newAPIError(http.StatusUnauthorized, "unauthorized", "Authentication is required."))
 		return
 	}
 
-	connection := newConnection(ws)
-	sessionID := nextSessionID()
-	firstSend := true
-	sender := func(projection game.Projection) error {
-		if firstSend {
-			firstSend = false
-			if err := connection.enqueue(map[string]string{"type": "session.authenticated"}); err != nil {
-				return err
-			}
-		}
-		return connection.enqueue(projection)
+	ws.SetReadLimit(readLimit)
+	_ = ws.SetReadDeadline(time.Now().Add(pongWait))
+	ws.SetPongHandler(func(string) error { return ws.SetReadDeadline(time.Now().Add(pongWait)) })
+
+	conn := &connection{
+		ws:   ws,
+		out:  make(chan outboundMessage, 32),
+		done: make(chan struct{}),
 	}
-	if err := active.Attach(playerID, auth.ReconnectToken, sessionID, sender, connection.close); err != nil {
-		status, code, message := sessionError(err)
-		writeSessionError(ws, status, code, message)
+	conn.encoder = json.NewEncoder(&conn.buffer)
+
+	sessionID := "session_" + strconv.FormatUint(sessionSequence.Add(1), 10)
+	sess := &wsSession{
+		id:        sessionID,
+		conn:      conn,
+		firstSend: true,
+	}
+
+	playerID, _, attachErr := active.AttachSession(auth.ReconnectToken, sess)
+	if attachErr != nil {
+		writeSessionError(ws, sessionError(attachErr))
 		return
 	}
-	go connection.writeLoop()
+
+	go conn.writeLoop()
 	defer func() {
 		active.Detach(playerID, sessionID)
-		connection.close()
+		conn.close()
 	}()
 
 	for {
@@ -107,19 +165,35 @@ func (h *handler) websocket(w http.ResponseWriter, r *http.Request) {
 		if message.Kind == "room.resync" {
 			projection, snapshotErr := active.Snapshot(playerID)
 			if snapshotErr == nil {
-				_ = connection.enqueue(projection)
+				_ = conn.enqueue(outboundMessage{kind: outboundProjection, projection: projection})
 			}
 			continue
 		}
 		command := game.Command{
-			Kind: game.CommandKind(message.Kind), OperationKind: message.OperationKind, OperationEnabled: message.OperationEnabled,
-			RoleID: message.RoleID, RoleEnabled: message.RoleEnabled, DiscussionTimerEnabled: message.DiscussionTimerEnabled,
-			DiscussionSeconds: message.DiscussionSeconds, VirusCount: message.VirusCount, TargetID: message.TargetID,
-			TargetIDs: append([]string(nil), message.TargetIDs...), Choice: message.Choice,
+			Kind:                   game.CommandKind(message.Kind),
+			OperationKind:          message.OperationKind,
+			OperationEnabled:       message.OperationEnabled,
+			RoleID:                 message.RoleID,
+			RoleEnabled:            message.RoleEnabled,
+			DiscussionTimerEnabled: message.DiscussionTimerEnabled,
+			DiscussionSeconds:      message.DiscussionSeconds,
+			VirusCount:             message.VirusCount,
+			TargetID:               message.TargetID,
+			TargetIDs:              message.TargetIDs,
+			Choice:                 message.Choice,
 		}
 		commandErr := active.Command(playerID, sessionID, message.ExpectedVersion, command)
 		code, errorMessage := commandError(commandErr)
-		_ = connection.enqueue(commandAck{Type: "command.ack", RequestID: message.RequestID, OK: commandErr == nil, Error: errorMessage, Code: code})
+		_ = conn.enqueue(outboundMessage{
+			kind: outboundCommandAck,
+			ack: commandAck{
+				Type:      "command.ack",
+				RequestID: message.RequestID,
+				OK:        commandErr == nil,
+				Error:     errorMessage,
+				Code:      code,
+			},
+		})
 	}
 }
 
@@ -136,32 +210,35 @@ func writeWebSocketJSON(conn *websocket.Conn, value any) error {
 	if err != nil {
 		return err
 	}
-	if err := conn.SetWriteDeadline(time.Now().Add(writeWait)); err != nil {
-		return err
-	}
-	return conn.WriteMessage(websocket.TextMessage, payload)
+	return writeWebSocketPayload(conn, payload)
 }
 
-func writeSessionError(conn *websocket.Conn, status int, code, message string) {
-	_ = writeWebSocketJSON(conn, map[string]any{"type": "session.error", "status": status, "error": message, "code": code})
+func writeSessionError(conn *websocket.Conn, apiErr *APIError) {
+	_ = writeWebSocketJSON(conn, sessionErrorResponse{Type: "session.error", Status: apiErr.Status, Error: apiErr.Message, Code: apiErr.Code})
 	_ = conn.Close()
 }
 
 type connection struct {
 	ws        *websocket.Conn
-	out       chan any
+	out       chan outboundMessage
 	done      chan struct{}
-	closeOnce sync.Once
+	closeOnce sync.Once // used to ensure that the close sequence of a connection happens once.
+	buffer    bytes.Buffer
+	encoder   *json.Encoder
 }
 
-func newConnection(ws *websocket.Conn) *connection {
-	ws.SetReadLimit(readLimit)
-	_ = ws.SetReadDeadline(time.Now().Add(pongWait))
-	ws.SetPongHandler(func(string) error { return ws.SetReadDeadline(time.Now().Add(pongWait)) })
-	return &connection{ws: ws, out: make(chan any, 16), done: make(chan struct{})}
+func (c *connection) writeJSON(value any) error {
+	c.buffer.Reset()
+	if err := c.encoder.Encode(value); err != nil {
+		return err
+	}
+	return writeWebSocketPayload(c.ws, c.buffer.Bytes())
 }
 
-func (c *connection) enqueue(value any) error {
+// enqueues an outbound message to a client connection.
+// if the out channel is full already then this connection is slow af.
+// close the connection if so (slow connection, may throttle the lobby more generally).
+func (c *connection) enqueue(value outboundMessage) error {
 	select {
 	case <-c.done:
 		return errors.New("connection closed")
@@ -181,7 +258,19 @@ func (c *connection) writeLoop() {
 		case <-c.done:
 			return
 		case message := <-c.out:
-			if err := writeWebSocketJSON(c.ws, message); err != nil {
+			var err error
+			switch message.kind {
+			case outboundAuthenticated:
+				err = c.writeJSON(sessionAuthenticatedResponse{Type: "session.authenticated"})
+			case outboundProjection:
+				err = c.writeJSON(message.projection)
+			case outboundCommandAck:
+				err = c.writeJSON(message.ack)
+			default:
+				c.close()
+				return
+			}
+			if err != nil {
 				c.close()
 				return
 			}
@@ -194,6 +283,13 @@ func (c *connection) writeLoop() {
 	}
 }
 
+func writeWebSocketPayload(conn *websocket.Conn, payload []byte) error {
+	if err := conn.SetWriteDeadline(time.Now().Add(writeWait)); err != nil {
+		return err
+	}
+	return conn.WriteMessage(websocket.TextMessage, payload)
+}
+
 func (c *connection) close() {
 	c.closeOnce.Do(func() {
 		close(c.done)
@@ -202,5 +298,3 @@ func (c *connection) close() {
 }
 
 var sessionSequence atomic.Uint64
-
-func nextSessionID() string { return "session_" + strconv.FormatUint(sessionSequence.Add(1), 10) }

@@ -1,6 +1,7 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useRef, useState, useSyncExternalStore } from "react";
+import { createPortal } from "react-dom";
 import type { ClientCommand, RoomProjection } from "../protocol";
 import type { PendingCommand } from "../use-room";
 import { getOperation, operationIdForServerKind, operationResultText, roomBriefing } from "../operations";
@@ -12,6 +13,12 @@ export type OperationScreenProps = {
   onSend(command: ClientCommand): void;
 };
 
+const emptySubscribe = () => () => {};
+
+function useIsMounted(): boolean {
+  return useSyncExternalStore(emptySubscribe, () => true, () => false);
+}
+
 function HighlightFaction({ text }: { text: string }) {
   const parts = text.split(/(VIRUS|SERVICE)/g);
   return (
@@ -21,6 +28,130 @@ function HighlightFaction({ text }: { text: string }) {
       return part;
     })}</>
   );
+}
+
+export function ClassifiedIntelDialog({
+  isOpen,
+  onClose,
+  projection,
+}: {
+  isOpen: boolean;
+  onClose(): void;
+  projection: RoomProjection;
+}) {
+  const mounted = useIsMounted();
+  const closeButtonRef = useRef<HTMLButtonElement | null>(null);
+
+  useEffect(() => {
+    if (!isOpen) return;
+    const previousFocus = document.activeElement instanceof HTMLElement ? document.activeElement : null;
+    closeButtonRef.current?.focus();
+    function handleKeyDown(event: KeyboardEvent): void {
+      if (event.key === "Escape") onClose();
+    }
+    window.addEventListener("keydown", handleKeyDown);
+    return () => {
+      window.removeEventListener("keydown", handleKeyDown);
+      previousFocus?.focus();
+    };
+  }, [isOpen, onClose]);
+
+  if (!isOpen) return null;
+
+  const result = projection.private.operation_result;
+  if (!result) return null;
+
+  const resultText = operationResultText(result, projection);
+  const secretOperation = projection.private.operation_kind
+    ? getOperation(operationIdForServerKind(projection.private.operation_kind))
+    : null;
+
+  const content = (
+    <div className="ta-modal-portal-backdrop" role="presentation" onClick={onClose}>
+      <div
+        className="ta-paper relative w-full max-w-md border-4 border-black p-5 text-left shadow-[8px_8px_0_var(--ta-shadow)]"
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby="classified-intel-title"
+        onClick={(event) => event.stopPropagation()}
+      >
+        <div className="flex items-start justify-between gap-3 border-b-2 border-black/25 pb-3">
+          <div className="flex items-center gap-2.5">
+            <span className="text-2xl" aria-hidden="true">📂</span>
+            <div>
+              <p className="ta-condensed text-xs font-bold tracking-[0.2em] text-ta-red uppercase">
+                FOR YOUR EYES ONLY
+              </p>
+              <h3 id="classified-intel-title" className="ta-display text-2xl leading-none text-ta-ink">
+                CLASSIFIED INTEL
+              </h3>
+            </div>
+          </div>
+          <button
+            ref={closeButtonRef}
+            type="button"
+            className="ta-secondary-button !min-h-0 border-2 border-black px-2.5 py-1 text-xs uppercase tracking-wider"
+            onClick={onClose}
+            aria-label="Close classified intel"
+          >
+            ✕
+          </button>
+        </div>
+
+        <div className="my-4 space-y-3">
+          {secretOperation ? (
+            <div className="flex items-center gap-3 border-b border-black/15 pb-2">
+              <ArtStamp artName={secretOperation.artName} alt="" className="h-12 w-auto shrink-0 object-contain" />
+              <div>
+                <p className="ta-condensed text-[0.65rem] tracking-[0.16em] text-black/60 uppercase">OPERATION ORDERS</p>
+                <p className="ta-display text-lg leading-tight">{projection.private.operation_name ?? secretOperation.name}</p>
+              </div>
+            </div>
+          ) : null}
+
+          <div>
+            <p className="ta-condensed mb-1 text-[0.65rem] tracking-[0.16em] text-black/60 uppercase">
+              DECRYPTED INTELLIGENCE
+            </p>
+            <div className="border-l-4 border-ta-teal bg-black/5 p-3">
+              <p className="ta-sans text-lg leading-snug font-medium text-ta-ink">
+                <HighlightFaction text={resultText} />
+              </p>
+            </div>
+          </div>
+
+          {result.message && result.message !== resultText ? (
+            <div>
+              <p className="ta-condensed mb-0.5 text-[0.65rem] tracking-[0.16em] text-black/60 uppercase">TRANSMISSION NOTE</p>
+              <p className="ta-sans text-xs text-black/75">{result.message}</p>
+            </div>
+          ) : null}
+
+          {projection.private.operation_instruction ? (
+            <div>
+              <p className="ta-condensed mb-0.5 text-[0.65rem] tracking-[0.16em] text-black/60 uppercase">DIRECTIVE</p>
+              <p className="ta-sans text-xs text-black/80">{projection.private.operation_instruction}</p>
+            </div>
+          ) : null}
+        </div>
+
+        <div className="border-t-2 border-black/25 pt-3.5 flex justify-end">
+          <button
+            type="button"
+            className="ta-secondary-button !min-h-0 border-2 border-black bg-ta-paper px-4 py-2 text-xs font-bold uppercase tracking-wider shadow-[2px_2px_0_var(--ta-shadow)] hover:bg-[#fff8e8]"
+            onClick={onClose}
+          >
+            🔒 HIDE INTEL
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+
+  if (typeof document !== "undefined" && mounted) {
+    return createPortal(content, document.body);
+  }
+  return content;
 }
 
 function TargetPicker({ projection, targetCount, selected, onChange }: {
@@ -80,26 +211,10 @@ function ChoicePicker({ projection, selected, onChange }: { projection: RoomProj
   );
 }
 
-function OperationResultView({ projection }: { projection: RoomProjection }) {
-  const result = projection.private.operation_result;
-  if (!result) {
-    return projection.private.operation_instruction ? (
-      <div className="ta-operation-state"><p className="ta-sans text-lg">{projection.private.operation_instruction}</p></div>
-    ) : null;
-  }
-  return (
-    <div className="ta-operation-state ta-operation-state-choice">
-      <div>
-        <p className="ta-condensed text-xs tracking-[0.16em] text-black/60">FOR YOUR EYES ONLY</p>
-        <p className="ta-sans mt-1 text-lg"><HighlightFaction text={operationResultText(result, projection)} /></p>
-      </div>
-    </div>
-  );
-}
-
 export function OperationScreen({ projection, pending, onSend }: OperationScreenProps) {
   const [selectedTargets, setSelectedTargets] = useState<string[]>([]);
   const [selectedChoice, setSelectedChoice] = useState("");
+  const [isIntelOpen, setIsIntelOpen] = useState(false);
   const room = projection.public;
   const personal = projection.private;
   const operationKey = `${room.operation?.kind ?? "none"}:${room.operation?.step ?? 0}:${personal.operation_kind ?? ""}`;
@@ -109,6 +224,7 @@ export function OperationScreen({ projection, pending, onSend }: OperationScreen
     setPrevOperationKey(operationKey);
     setSelectedTargets([]);
     setSelectedChoice("");
+    setIsIntelOpen(false);
   }
 
   const publicOperation = getOperation(operationIdForServerKind(room.operation?.kind));
@@ -153,7 +269,7 @@ export function OperationScreen({ projection, pending, onSend }: OperationScreen
         </div>
       </div>
 
-      {secretOperation ? (
+      {secretOperation && room.phase !== "OPERATION_RESULT" ? (
         <div className="ta-operation-state ta-operation-state-choice">
           <div>
             <p className="ta-condensed text-xs tracking-[0.16em] text-black/60">YOUR ORDERS · FOR YOUR EYES ONLY</p>
@@ -164,7 +280,35 @@ export function OperationScreen({ projection, pending, onSend }: OperationScreen
         </div>
       ) : null}
 
-      {room.phase === "OPERATION_RESULT" ? <OperationResultView projection={projection} /> : !isInputOwner ? (
+      {room.phase === "OPERATION_RESULT" ? (
+        personal.operation_result ? (
+          <div className="ta-paper p-4 text-center shadow-[4px_4px_0_var(--ta-shadow)]">
+            <div className="flex items-center justify-center gap-2">
+              <span className="text-xl" aria-hidden="true">📂</span>
+              <p className="ta-condensed text-xs font-bold tracking-[0.18em] text-ta-red uppercase">
+                CLASSIFIED INTEL READY
+              </p>
+            </div>
+            <p className="ta-sans mt-1 text-sm text-black/75">
+              Private intelligence has been decoded for your eyes only.
+            </p>
+            <button
+              type="button"
+              className="ta-secondary-button mt-3 w-full border-2 border-black bg-ta-paper py-2.5 font-bold tracking-wider text-ta-ink uppercase shadow-[3px_3px_0_var(--ta-shadow)] hover:bg-[#fff8e8]"
+              onClick={() => setIsIntelOpen(true)}
+            >
+              📂 VIEW CLASSIFIED INTEL
+            </button>
+          </div>
+        ) : personal.operation_instruction ? (
+          <div className="ta-operation-state">
+            <div>
+              <p className="ta-condensed text-xs tracking-[0.16em]">OPERATION RESULT</p>
+              <p className="ta-sans mt-1 text-lg">{personal.operation_instruction}</p>
+            </div>
+          </div>
+        ) : null
+      ) : !isInputOwner ? (
         personal.operation_instruction ? (
           <div className="ta-operation-state"><div><p className="ta-condensed text-xs tracking-[0.16em]">OPERATION IN PROGRESS</p><p className="ta-sans mt-1 text-lg">{personal.operation_instruction}</p></div></div>
         ) : null
@@ -184,8 +328,22 @@ export function OperationScreen({ projection, pending, onSend }: OperationScreen
         busy={inputBusy || doneBusy}
         busyLabel={room.phase === "OPERATION_INPUT" ? "Saving operation…" : "Saving…"}
       >
-        {room.phase === "OPERATION_INPUT" ? (personal.can_submit ? "Confirm operation" : `Waiting for ${activePlayerName}`) : personal.can_submit ? "Done" : `Waiting for ${activePlayerName}`}
+        {room.phase === "OPERATION_INPUT"
+          ? (personal.can_submit ? "Confirm operation" : `Waiting for ${activePlayerName}`)
+          : personal.can_submit
+          ? "Done"
+          : personal.operation_acknowledged
+          ? "Waiting for other agent…"
+          : `Waiting for ${activePlayerName}`}
       </InkButton>
+
+      {/* Reopenable Classified Intel Modal Dialog */}
+      <ClassifiedIntelDialog
+        isOpen={isIntelOpen}
+        onClose={() => setIsIntelOpen(false)}
+        projection={projection}
+      />
     </div>
   );
 }
+

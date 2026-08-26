@@ -1,20 +1,20 @@
 package game
 
 func allVotesSubmitted(state State) bool {
-	connected := 0
+	voters := 0
 	for _, id := range state.PlayerOrder {
 		player := state.Players[id]
-		if player.Connected && player.CanVote {
-			connected++
+		if player.CanVote {
+			voters++
 			if _, ok := state.Vote.Submitted[id]; !ok {
 				return false
 			}
 		}
 	}
-	return connected > 0
+	return voters > 0
 }
 
-func resolveVote(state *State) {
+func (state *State) resolveVote() {
 	if state.Vote.Totals == nil {
 		state.Vote.Totals = map[string]int{}
 	}
@@ -134,13 +134,33 @@ func winnerActivity(state State) string {
 
 func buildLeaderboard(state State) []LeaderboardEntry {
 	entries := make([]LeaderboardEntry, 0, len(state.PlayerOrder))
+	visited := make(map[string]bool, len(state.Players))
 	for _, id := range state.PlayerOrder {
 		player := state.Players[id]
 		result := "LOSER"
-		if playerWins(state, id) {
+		clear(visited)
+		if playerWinsWithVisited(state, id, visited) {
 			result = "WINNER"
 		}
-		entries = append(entries, LeaderboardEntry{PlayerID: id, Name: player.Name, Faction: player.Faction, Role: player.Role, Defection: defectionFor(player), Votes: state.Vote.Totals[id], Result: result})
+		var objectiveName string
+		if player.ObjectiveTarget != "" {
+			if target, ok := state.Players[player.ObjectiveTarget]; ok {
+				objectiveName = target.Name
+			}
+		}
+		entries = append(entries, LeaderboardEntry{
+			PlayerID:        id,
+			Name:            player.Name,
+			InitialFaction:  player.InitialFaction,
+			Faction:         player.Faction,
+			Role:            player.Role,
+			Defection:       defectionFor(player),
+			ObjectiveKind:   player.ObjectiveKind,
+			ObjectiveTarget: player.ObjectiveTarget,
+			ObjectiveName:   objectiveName,
+			Votes:           state.Vote.Totals[id],
+			Result:          result,
+		})
 	}
 	return entries
 }
@@ -152,10 +172,6 @@ func defectionFor(player Player) string {
 		}
 	}
 	return ""
-}
-
-func playerWins(state State, playerID string) bool {
-	return playerWinsWithVisited(state, playerID, map[string]bool{})
 }
 
 func playerWinsWithVisited(state State, playerID string, visited map[string]bool) bool {

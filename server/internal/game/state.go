@@ -2,6 +2,8 @@ package game
 
 import (
 	"errors"
+	"maps"
+	"slices"
 	"time"
 )
 
@@ -45,6 +47,7 @@ const (
 	CommandSetVirusCount         CommandKind = "lobby.virus_count"
 	CommandTransferHost          CommandKind = "lobby.transfer_host"
 	CommandKickPlayer            CommandKind = "lobby.kick_player"
+	CommandVoteKick              CommandKind = "room.vote_kick"
 )
 
 type Faction string
@@ -138,6 +141,7 @@ type OperationState struct {
 	TargetPlayerID  string                     `json:"target_player_id,omitempty"`
 	TargetPlayerIDs []string                   `json:"target_player_ids,omitempty"`
 	PrivateResults  map[string]OperationResult `json:"private_results,omitempty"`
+	Acks            map[string]bool            `json:"acks,omitempty"`
 }
 
 type OperationResult struct {
@@ -158,28 +162,29 @@ type VoteState struct {
 }
 
 type State struct {
-	HostID              string            `json:"host_id"`
-	Settings            Settings          `json:"settings"`
-	Phase               Phase             `json:"phase"`
-	Version             uint64            `json:"version"`
-	Players             map[string]Player `json:"players"`
-	PlayerOrder         []string          `json:"player_order"`
-	RoleAcks            map[string]bool   `json:"role_acks,omitempty"`
-	DiscussionAcks      map[string]bool   `json:"discussion_acks,omitempty"`
-	ActivePlayerID      string            `json:"active_player_id,omitempty"`
-	PlannedOperation    string            `json:"planned_operation,omitempty"`
-	OperationQueue      []string          `json:"operation_queue,omitempty"`
-	OperationQueueIndex int               `json:"operation_queue_index,omitempty"`
-	OperationDeck       []string          `json:"operation_deck,omitempty"`
-	OperationLastKind   string            `json:"operation_last_kind,omitempty"`
-	OperationDealTarget int               `json:"operation_deal_target,omitempty"`
-	OperationDeals      int               `json:"operation_deals,omitempty"`
-	OperationsDealt     []string          `json:"operations_dealt,omitempty"`
-	Operation           *OperationState   `json:"operation,omitempty"`
-	DiscussionDeadline  *time.Time        `json:"discussion_deadline,omitempty"`
-	Vote                VoteState         `json:"vote"`
-	Winner              Faction           `json:"winner"`
-	RandomState         uint64            `json:"-"`
+	HostID              string                     `json:"host_id"`
+	Settings            Settings                   `json:"settings"`
+	Phase               Phase                      `json:"phase"`
+	Version             uint64                     `json:"version"`
+	Players             map[string]Player          `json:"players"`
+	PlayerOrder         []string                   `json:"player_order"`
+	RoleAcks            map[string]bool            `json:"role_acks,omitempty"`
+	DiscussionAcks      map[string]bool            `json:"discussion_acks,omitempty"`
+	ActivePlayerID      string                     `json:"active_player_id,omitempty"`
+	PlannedOperation    string                     `json:"planned_operation,omitempty"`
+	OperationQueue      []string                   `json:"operation_queue,omitempty"`
+	OperationQueueIndex int                        `json:"operation_queue_index,omitempty"`
+	OperationDeck       []string                   `json:"operation_deck,omitempty"`
+	OperationLastKind   string                     `json:"operation_last_kind,omitempty"`
+	OperationDealTarget int                        `json:"operation_deal_target,omitempty"`
+	OperationDeals      int                        `json:"operation_deals,omitempty"`
+	OperationsDealt     []string                   `json:"operations_dealt,omitempty"`
+	Operation           *OperationState            `json:"operation,omitempty"`
+	DiscussionDeadline  *time.Time                 `json:"discussion_deadline,omitempty"`
+	Vote                VoteState                  `json:"vote"`
+	VoteKicks           map[string]map[string]bool `json:"vote_kicks,omitempty"`
+	Winner              Faction                    `json:"winner"`
+	RandomState         uint64                     `json:"-"`
 }
 
 type Command struct {
@@ -209,9 +214,9 @@ var (
 	ErrPlayerExists         = errors.New("player already exists")
 )
 
-func committed(state State) State {
+func (state *State) committed() State {
 	state.Version++
-	return state
+	return *state
 }
 
 func cloneState(state State) State {
@@ -239,6 +244,7 @@ func cloneState(state State) State {
 	if state.Operation != nil {
 		operation := *state.Operation
 		operation.TargetPlayerIDs = append([]string(nil), operation.TargetPlayerIDs...)
+		operation.Acks = cloneBoolMap(state.Operation.Acks)
 		if state.Operation.PrivateResults != nil {
 			operation.PrivateResults = make(map[string]OperationResult, len(state.Operation.PrivateResults))
 			for id, result := range state.Operation.PrivateResults {
@@ -254,7 +260,87 @@ func cloneState(state State) State {
 	}
 	state.Vote.Submitted = cloneStringMap(state.Vote.Submitted)
 	state.Vote.Totals = cloneIntMap(state.Vote.Totals)
+	if state.VoteKicks != nil {
+		voteKicks := make(map[string]map[string]bool, len(state.VoteKicks))
+		for targetID, voters := range state.VoteKicks {
+			voteKicks[targetID] = cloneBoolMap(voters)
+		}
+		state.VoteKicks = voteKicks
+	}
 	return state
+}
+
+func copyPlayers(state State) State {
+	next := state
+	next.Players = maps.Clone(state.Players)
+	return next
+}
+
+func copyEnabledOperations(state State) State {
+	next := state
+	next.Settings.EnabledOperations = maps.Clone(state.Settings.EnabledOperations)
+	return next
+}
+
+func copyEnabledRoles(state State) State {
+	next := state
+	next.Settings.EnabledRoles = maps.Clone(state.Settings.EnabledRoles)
+	return next
+}
+
+func copyRoleAcks(state State) State {
+	next := state
+	next.RoleAcks = maps.Clone(state.RoleAcks)
+	return next
+}
+
+func copyDiscussionAcks(state State) State {
+	next := state
+	next.DiscussionAcks = maps.Clone(state.DiscussionAcks)
+	return next
+}
+
+func copyVoteSubmitted(state State) State {
+	next := state
+	next.Vote.Submitted = maps.Clone(state.Vote.Submitted)
+	if next.Vote.Submitted == nil {
+		next.Vote.Submitted = make(map[string]string)
+	}
+	return next
+}
+
+func copyOperationAcks(state State) State {
+	next := state
+	if state.Operation == nil {
+		return next
+	}
+	operation := *state.Operation
+	operation.Acks = maps.Clone(state.Operation.Acks)
+	next.Operation = &operation
+	return next
+}
+
+func copyVoteKicks(state State) State {
+	next := state
+	if state.VoteKicks == nil {
+		return next
+	}
+	next.VoteKicks = make(map[string]map[string]bool, len(state.VoteKicks))
+	for targetID, voters := range state.VoteKicks {
+		next.VoteKicks[targetID] = maps.Clone(voters)
+	}
+	return next
+}
+
+func copyStateForPlayerRemoval(state State) State {
+	next := state
+	next.Players = maps.Clone(state.Players)
+	next.PlayerOrder = slices.Clone(state.PlayerOrder)
+	next.RoleAcks = maps.Clone(state.RoleAcks)
+	next.DiscussionAcks = maps.Clone(state.DiscussionAcks)
+	next.Vote.Submitted = maps.Clone(state.Vote.Submitted)
+	next = copyVoteKicks(next)
+	return next
 }
 
 func cloneBoolMap(source map[string]bool) map[string]bool {

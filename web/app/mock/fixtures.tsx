@@ -1,15 +1,15 @@
 "use client";
 
 import { useMemo, useState } from "react";
-import type { ClientCommand, Phase, RoomProjection } from "../_game/protocol";
-import { LobbyScreen } from "../_game/screens/lobby";
-import { SettingsScreen } from "../_game/screens/settings";
-import { RoleScreen } from "../_game/screens/role";
-import { OperationScreen } from "../_game/screens/operation";
-import { InterludeScreen } from "../_game/screens/interlude";
-import { DiscussionScreen } from "../_game/screens/discussion";
-import { AccusationScreen } from "../_game/screens/accusation";
-import { ResultsScreen } from "../_game/screens/results";
+import type { ClientCommand, Phase, RoomProjection } from "@/features/triple-agent/protocol";
+import { LobbyScreen } from "@/features/triple-agent/screens/lobby";
+import { SettingsScreen } from "@/features/triple-agent/screens/settings";
+import { RoleScreen } from "@/features/triple-agent/screens/role";
+import { OperationScreen } from "@/features/triple-agent/screens/operation";
+import { InterludeScreen } from "@/features/triple-agent/screens/interlude";
+import { DiscussionScreen } from "@/features/triple-agent/screens/discussion";
+import { AccusationScreen } from "@/features/triple-agent/screens/accusation";
+import { ResultsScreen } from "@/features/triple-agent/screens/results";
 
 const phases: Phase[] = [
   "LOBBY", "ROLE_REVEAL", "OPERATION_INPUT", "OPERATION_RESULT", "OPERATION_INTERLUDE",
@@ -78,8 +78,7 @@ export function MockFixtures() {
   if (settings) screen = <SettingsScreen {...common} onClose={() => setSettings(false)} />;
   else {
     switch (phase) {
-      case "LOBBY": screen = <LobbyScreen {...common} joinCode="XZ04NW" copied={false} onShareLink={() => setLastCommand("share link")}
-        onCopyRoomCode={() => {}} />; break;
+      case "LOBBY": screen = <LobbyScreen {...common} joinCode="XZ04NW" copied={false} onShareLink={() => setLastCommand("share link")} onCopyRoomCode={() => {}} />; break;
       case "ROLE_REVEAL": screen = <RoleScreen {...common} />; break;
       case "OPERATION_INPUT": case "OPERATION_RESULT": screen = <OperationScreen {...common} />; break;
       case "OPERATION_INTERLUDE": screen = <InterludeScreen {...common} />; break;

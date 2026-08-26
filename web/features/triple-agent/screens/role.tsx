@@ -1,7 +1,8 @@
+import { useState } from "react";
 import type { ClientCommand, RoomProjection } from "../protocol";
 import type { PendingCommand } from "../use-room";
 import { getRole } from "../roles";
-import { ArtStamp, InkButton, PaperTitle } from "../ui";
+import { ArtStamp, BiometricScanner, InkButton, PaperTitle } from "../ui";
 
 export type RoleScreenProps = {
   projection: RoomProjection;
@@ -35,6 +36,7 @@ function VirusRoster({ roster, teamSize }: { roster: Teammate[]; teamSize: numbe
 }
 
 export function RoleScreen({ projection, pending, onSend }: RoleScreenProps) {
+  const [isRevealed, setIsRevealed] = useState(false);
   const personal = projection.private;
   const faction = personal.faction ?? personal.initial_faction;
   const isVirus = faction === "VIRUS";
@@ -46,9 +48,50 @@ export function RoleScreen({ projection, pending, onSend }: RoleScreenProps) {
   const waitingOn = projection.public.pending_role_acks ?? 0;
   const busy = pending?.kind === "role.acknowledge";
 
+  if (!isRevealed) {
+    return (
+      <div className="ta-rise ta-screen">
+        <PaperTitle>Confidential Dossier</PaperTitle>
+        <div className="ta-paper overflow-hidden p-6 text-center shadow-[6px_6px_0_var(--ta-shadow)]">
+          <div className="inline-block border-2 border-ta-red/60 bg-ta-red/10 px-3 py-1 text-xs font-bold tracking-[0.2em] text-ta-red uppercase">
+            FOR YOUR EYES ONLY
+          </div>
+          <h3 className="ta-display mt-3 text-3xl">SEALED ASSIGNMENT</h3>
+          <p className="ta-sans mx-auto mt-2 max-w-sm text-base text-black/75">
+            Press and hold to decrypt assignment. Keep your screen shielded from other agents.
+          </p>
+
+          <div className="mt-6 flex justify-center">
+            <BiometricScanner
+              onComplete={() => setIsRevealed(true)}
+              holdDurationMs={1500}
+              label="Press and hold to decrypt assignment"
+              sublabel="FOR YOUR EYES ONLY"
+            />
+          </div>
+
+          <p className="ta-condensed mt-4 text-xs tracking-[0.16em] text-black/50 uppercase">
+            SECURITY PROTOCOL · HOLD 1.5 SECONDS
+          </p>
+        </div>
+      </div>
+    );
+  }
+
   return (
     <div className="ta-rise ta-screen">
-      <PaperTitle>Private role reveal</PaperTitle>
+      <div className="flex items-center justify-between gap-3">
+        <PaperTitle className="flex-1">Private role reveal</PaperTitle>
+        <button
+          type="button"
+          onClick={() => setIsRevealed(false)}
+          className="ta-secondary-button border-2 border-black bg-ta-paper px-3 py-2 text-xs font-bold tracking-wider text-ta-ink uppercase shadow-[3px_3px_0_var(--ta-shadow)] hover:bg-[#fff8e8]"
+          aria-label="Hide and re-seal assignment"
+        >
+          🔒 Hide / Re-seal
+        </button>
+      </div>
+
       <div className="ta-paper overflow-hidden p-5 text-center">
         <p className="ta-condensed text-xs tracking-[0.2em] text-black/60">YOUR ASSIGNMENT</p>
         <ArtStamp artName={isVirus ? "virusLogo" : "serviceLogo"} alt={`${isVirus ? "VIRUS" : "SERVICE"} agency`} className="mx-auto mt-4 h-44 w-auto object-contain" />
@@ -75,7 +118,13 @@ export function RoleScreen({ projection, pending, onSend }: RoleScreenProps) {
       {showRoster ? <VirusRoster roster={personal.virus_roster ?? []} teamSize={personal.virus_team_size ?? 0} /> : null}
 
       <div className="mt-3 flex items-center justify-between gap-3">
-        <span className="ta-condensed text-xs tracking-[0.16em]">PRIVATE ROLE</span>
+        <button
+          type="button"
+          onClick={() => setIsRevealed(false)}
+          className="ta-condensed text-xs tracking-[0.16em] text-black/70 underline hover:text-black"
+        >
+          🔒 HIDE / RE-SEAL
+        </button>
         <InkButton
           onClick={() => onSend({ kind: "role.acknowledge" })}
           disabled={!personal.can_submit || Boolean(pending && !busy)}
@@ -88,3 +137,4 @@ export function RoleScreen({ projection, pending, onSend }: RoleScreenProps) {
     </div>
   );
 }
+

@@ -12,15 +12,16 @@ type PublicPlayer struct {
 }
 
 type PublicOperation struct {
-	Kind              string             `json:"kind"`
-	Name              string             `json:"name"`
-	InputKind         OperationInputKind `json:"input_kind"`
-	TargetCount       int                `json:"target_count,omitempty"`
-	ActivePlayerID    string             `json:"active_player_id"`
-	ActivePlayerName  string             `json:"active_player_name"`
-	InputOwnerID      string             `json:"input_owner_id,omitempty"`
-	Step              int                `json:"step,omitempty"`
-	PublicInstruction string             `json:"public_instruction"`
+	Kind                  string             `json:"kind"`
+	Name                  string             `json:"name"`
+	InputKind             OperationInputKind `json:"input_kind"`
+	TargetCount           int                `json:"target_count,omitempty"`
+	ActivePlayerID        string             `json:"active_player_id"`
+	ActivePlayerName      string             `json:"active_player_name"`
+	InputOwnerID          string             `json:"input_owner_id,omitempty"`
+	Step                  int                `json:"step,omitempty"`
+	PublicInstruction     string             `json:"public_instruction"`
+	AcknowledgedPlayerIDs []string           `json:"acknowledged_player_ids,omitempty"`
 }
 
 type PublicRoomSettings struct {
@@ -35,13 +36,25 @@ type PublicRoomSettings struct {
 }
 
 type LeaderboardEntry struct {
-	PlayerID  string   `json:"player_id"`
-	Name      string   `json:"name"`
-	Faction   Faction  `json:"faction"`
-	Role      RoleKind `json:"role,omitempty"`
-	Defection string   `json:"defection,omitempty"`
-	Votes     int      `json:"votes"`
-	Result    string   `json:"result"`
+	PlayerID        string   `json:"player_id"`
+	Name            string   `json:"name"`
+	InitialFaction  Faction  `json:"initial_faction"`
+	Faction         Faction  `json:"faction"`
+	Role            RoleKind `json:"role,omitempty"`
+	Defection       string   `json:"defection,omitempty"`
+	ObjectiveKind   string   `json:"objective_kind,omitempty"`
+	ObjectiveTarget string   `json:"objective_target,omitempty"`
+	ObjectiveName   string   `json:"objective_name,omitempty"`
+	Votes           int      `json:"votes"`
+	Result          string   `json:"result"`
+}
+
+type PublicVoteKick struct {
+	TargetID   string `json:"target_id"`
+	TargetName string `json:"target_name"`
+	Votes      int    `json:"votes"`
+	Required   int    `json:"required"`
+	HasVoted   bool   `json:"has_voted"`
 }
 
 type PublicProjection struct {
@@ -62,27 +75,29 @@ type PublicProjection struct {
 	Activity             string             `json:"activity,omitempty"`
 	PendingRoleAcks      int                `json:"pending_role_acks,omitempty"`
 	DiscussionReadyCount int                `json:"discussion_ready_count,omitempty"`
+	VoteKicks            []PublicVoteKick   `json:"vote_kicks,omitempty"`
 }
 
 type PrivateProjection struct {
-	PlayerID             string           `json:"player_id"`
-	Role                 RoleKind         `json:"role,omitempty"`
-	InitialFaction       Faction          `json:"initial_faction,omitempty"`
-	Faction              Faction          `json:"faction,omitempty"`
-	ApparentFaction      *Faction         `json:"apparent_faction,omitempty"`
-	OperationResult      *OperationResult `json:"operation_result,omitempty"`
-	OperationInstruction string           `json:"operation_instruction,omitempty"`
-	RoleName             string           `json:"role_name,omitempty"`
-	RoleDescription      string           `json:"role_description,omitempty"`
-	RoleEffect           string           `json:"role_effect,omitempty"`
-	VirusRoster          []PublicPlayer   `json:"virus_roster,omitempty"`
-	VirusTeamSize        int              `json:"virus_team_size,omitempty"`
-	OperationKind        string           `json:"operation_kind,omitempty"`
-	OperationName        string           `json:"operation_name,omitempty"`
-	LegalTargetIDs       []string         `json:"legal_target_ids,omitempty"`
-	Choices              []string         `json:"choices,omitempty"`
-	VoteSubmitted        bool             `json:"vote_submitted"`
-	CanSubmit            bool             `json:"can_submit"`
+	PlayerID              string           `json:"player_id"`
+	Role                  RoleKind         `json:"role,omitempty"`
+	InitialFaction        Faction          `json:"initial_faction,omitempty"`
+	Faction               Faction          `json:"faction,omitempty"`
+	ApparentFaction       *Faction         `json:"apparent_faction,omitempty"`
+	OperationResult       *OperationResult `json:"operation_result,omitempty"`
+	OperationInstruction  string           `json:"operation_instruction,omitempty"`
+	RoleName              string           `json:"role_name,omitempty"`
+	RoleDescription       string           `json:"role_description,omitempty"`
+	RoleEffect            string           `json:"role_effect,omitempty"`
+	VirusRoster           []PublicPlayer   `json:"virus_roster,omitempty"`
+	VirusTeamSize         int              `json:"virus_team_size,omitempty"`
+	OperationKind         string           `json:"operation_kind,omitempty"`
+	OperationName         string           `json:"operation_name,omitempty"`
+	LegalTargetIDs        []string         `json:"legal_target_ids,omitempty"`
+	Choices               []string         `json:"choices,omitempty"`
+	VoteSubmitted         bool             `json:"vote_submitted"`
+	CanSubmit             bool             `json:"can_submit"`
+	OperationAcknowledged bool             `json:"operation_acknowledged"`
 }
 
 type Projection struct {
@@ -102,7 +117,7 @@ func PublicProjectionFor(roomID string, state State) PublicProjection {
 		_, submitted := state.Vote.Submitted[id]
 		players = append(players, PublicPlayer{ID: id, Name: player.Name, Seat: index + 1, Ready: player.Ready, Connected: player.Connected, VoteSubmitted: submitted})
 	}
-	voteTotals := map[string]int{}
+	var voteTotals map[string]int
 	if revealsVoteTotals(state.Phase) {
 		voteTotals = cloneIntMap(state.Vote.Totals)
 	}
@@ -148,9 +163,19 @@ func PublicProjectionFor(roomID string, state State) PublicProjection {
 			if inputOwner == "" {
 				inputOwner = state.ActivePlayerID
 			}
+			var acks []string
+			if state.Operation.Acks != nil {
+				acks = make([]string, 0, len(state.Operation.Acks))
+				for _, id := range state.PlayerOrder {
+					if state.Operation.Acks[id] {
+						acks = append(acks, id)
+					}
+				}
+			}
 			public.Operation = &PublicOperation{
 				Kind: definition.ID, Name: definition.Name, InputKind: definition.InputKind, TargetCount: definition.TargetCount,
 				ActivePlayerID: state.ActivePlayerID, InputOwnerID: inputOwner, Step: state.Operation.Step, PublicInstruction: definition.PublicInstruction,
+				AcknowledgedPlayerIDs: acks,
 			}
 			if active, exists := state.Players[state.ActivePlayerID]; exists {
 				public.Operation.ActivePlayerName = active.Name
@@ -164,11 +189,46 @@ func PublicProjectionFor(roomID string, state State) PublicProjection {
 			}
 		}
 	}
+	connectedCount := 0
+	for _, p := range state.Players {
+		if p.Connected {
+			connectedCount++
+		}
+	}
+	var voteKicks []PublicVoteKick
+	for _, id := range state.PlayerOrder {
+		p := state.Players[id]
+		if !p.Connected {
+			votes := 0
+			if state.VoteKicks != nil && state.VoteKicks[id] != nil {
+				for voterID, voted := range state.VoteKicks[id] {
+					if voted && state.Players[voterID].Connected {
+						votes++
+					}
+				}
+			}
+			voteKicks = append(voteKicks, PublicVoteKick{
+				TargetID:   id,
+				TargetName: p.Name,
+				Votes:      votes,
+				Required:   connectedCount,
+			})
+		}
+	}
+	public.VoteKicks = voteKicks
 	return public
 }
 
 func ProjectWithPublic(state State, playerID string, public PublicProjection) Projection {
 	private := PrivateProjection{PlayerID: playerID}
+	if len(public.VoteKicks) > 0 {
+		vks := make([]PublicVoteKick, len(public.VoteKicks))
+		for i, vk := range public.VoteKicks {
+			vk.HasVoted = state.VoteKicks != nil && state.VoteKicks[vk.TargetID] != nil && state.VoteKicks[vk.TargetID][playerID]
+			vks[i] = vk
+		}
+		public.VoteKicks = vks
+	}
 	if player, ok := state.Players[playerID]; ok {
 		private.Role = player.Role
 		private.InitialFaction = player.InitialFaction
@@ -229,6 +289,9 @@ func ProjectWithPublic(state State, playerID string, public PublicProjection) Pr
 			resultCopy.TargetPlayerIDs = append([]string(nil), result.TargetPlayerIDs...)
 			private.OperationResult = &resultCopy
 		}
+	}
+	if state.Operation != nil && state.Operation.Acks != nil {
+		private.OperationAcknowledged = state.Operation.Acks[playerID]
 	}
 	return Projection{Type: "room.projection", Public: public, Private: private}
 }
@@ -291,10 +354,13 @@ func canSubmit(state State, playerID string) bool {
 		}
 		return state.ActivePlayerID == playerID
 	case PhaseOperationResult:
-		if state.Operation != nil && state.Operation.InputOwnerID != "" {
-			return state.Operation.InputOwnerID == playerID || state.ActivePlayerID == playerID
+		if state.Operation == nil {
+			return false
 		}
-		return state.ActivePlayerID == playerID
+		if state.Operation.Acks != nil && state.Operation.Acks[playerID] {
+			return false
+		}
+		return isOperationParticipant(state, playerID)
 	case PhaseOperationInterlude:
 		return state.HostID == playerID
 	case PhaseDiscussion:

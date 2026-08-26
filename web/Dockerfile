@@ -34,4 +34,4 @@ EXPOSE 3000
 
 # Railway injects PORT=8080 for this service. Keep the public web service on
 # the port declared above so Railway's proxy and the process agree.
-CMD ["sh", "-c", "PORT=3000 bun server.js"]
+CMD ["sh", "-c", "HOSTNAME=0.0.0.0 PORT=3000 bun server.js"]

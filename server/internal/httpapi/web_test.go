@@ -48,7 +48,16 @@ func TestCreateJoinLeaveContract(t *testing.T) {
 	if err := json.Unmarshal(createdResponse.Body.Bytes(), &created); err != nil {
 		t.Fatal(err)
 	}
-	if created.RoomID == "" || created.JoinCode == "" || created.PlayerID == "" || created.ReconnectToken == "" {
+	var createdFields map[string]json.RawMessage
+	if err := json.Unmarshal(createdResponse.Body.Bytes(), &createdFields); err != nil {
+		t.Fatal(err)
+	}
+	for _, field := range []string{"room_id", "player_id"} {
+		if _, exists := createdFields[field]; exists {
+			t.Fatalf("create response still exposes internal field %q: %s", field, createdResponse.Body.String())
+		}
+	}
+	if created.JoinCode == "" || created.ReconnectToken == "" {
 		t.Fatalf("incomplete create response: %+v", created)
 	}
 
@@ -60,11 +69,11 @@ func TestCreateJoinLeaveContract(t *testing.T) {
 	if err := json.Unmarshal(joinedResponse.Body.Bytes(), &joined); err != nil {
 		t.Fatal(err)
 	}
-	if joined.RoomID != created.RoomID || joined.PlayerID == created.PlayerID || joined.ReconnectToken == "" {
+	if joined.JoinCode != created.JoinCode || joined.ReconnectToken == "" {
 		t.Fatalf("bad join response: %+v", joined)
 	}
 
-	leaveResponse := doJSON(t, handler, http.MethodPost, "/api/lobbies/leave", `{"room_id":"`+joined.RoomID+`","player_id":"`+joined.PlayerID+`","reconnect_token":"`+joined.ReconnectToken+`"}`)
+	leaveResponse := doJSON(t, handler, http.MethodPost, "/api/lobbies/leave", `{"join_code":"`+joined.JoinCode+`","reconnect_token":"`+joined.ReconnectToken+`"}`)
 	if leaveResponse.Code != http.StatusOK {
 		t.Fatalf("leave status=%d body=%s", leaveResponse.Code, leaveResponse.Body.String())
 	}
@@ -105,16 +114,16 @@ func TestMissingLobbyAndBadTokenStatusCodes(t *testing.T) {
 	createdResponse := doJSON(t, handler, http.MethodPost, "/api/lobbies", `{"player_name":"Host"}`)
 	var created lobbyResponse
 	_ = json.Unmarshal(createdResponse.Body.Bytes(), &created)
-	badLeave := doJSON(t, handler, http.MethodPost, "/api/lobbies/leave", `{"room_id":"`+created.RoomID+`","player_id":"`+created.PlayerID+`","reconnect_token":"wrong"}`)
+	badLeave := doJSON(t, handler, http.MethodPost, "/api/lobbies/leave", `{"join_code":"`+created.JoinCode+`","reconnect_token":"wrong"}`)
 	if badLeave.Code != http.StatusUnauthorized {
 		t.Fatalf("bad token status=%d body=%s", badLeave.Code, badLeave.Body.String())
 	}
 }
 
 func TestSessionMissingRoomMapsToGone(t *testing.T) {
-	status, code, _ := sessionError(room.ErrRoomNotFound)
-	if status != http.StatusGone || code != "room_gone" {
-		t.Fatalf("status=%d code=%q", status, code)
+	apiErr := sessionError(room.ErrRoomNotFound)
+	if apiErr.Status != http.StatusGone || apiErr.Code != "room_gone" || apiErr.Message != "Room is no longer available." {
+		t.Fatalf("api error=%+v", apiErr)
 	}
 }
 
@@ -155,7 +164,7 @@ func TestJSONBodyLimit(t *testing.T) {
 	}
 }
 
-func TestErrorClassifiersCoverProtocolCases(t *testing.T) {
+func TestAPIErrorsCoverProtocolCases(t *testing.T) {
 	tests := []struct {
 		name   string
 		err    error
@@ -168,11 +177,16 @@ func TestErrorClassifiersCoverProtocolCases(t *testing.T) {
 	}
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
-			status, code, _ := classifyHTTPError(tc.err)
-			if status != tc.status || code != tc.code {
-				t.Fatalf("status=%d code=%q", status, code)
+			apiErr := apiErrorFor(tc.err)
+			if apiErr.Status != tc.status || apiErr.Code != tc.code {
+				t.Fatalf("api error=%+v", apiErr)
 			}
 		})
+	}
+
+	apiErr := newAPIError(http.StatusConflict, "conflict", "Conflict.")
+	if apiErr.Status != http.StatusConflict || apiErr.Code != "conflict" || apiErr.Message != "Conflict." || apiErr.Error() != "Conflict." {
+		t.Fatalf("unexpected API error: %+v", apiErr)
 	}
 
 	commandCases := []struct {

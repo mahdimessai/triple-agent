@@ -128,7 +128,16 @@ func (f *gameFixture) Resolve(command Command) {
 func (f *gameFixture) FinishOperation() {
 	f.t.Helper()
 	if f.state.Phase == PhaseOperationResult {
-		f.Apply(f.state.ActivePlayerID, Command{Kind: CommandOperationExplainDone})
+		if f.state.ActivePlayerID != "" {
+			f.Apply(f.state.ActivePlayerID, Command{Kind: CommandOperationExplainDone})
+		}
+		if f.state.Operation != nil {
+			for id := range f.state.Operation.PrivateResults {
+				if f.state.Phase == PhaseOperationResult {
+					f.Apply(id, Command{Kind: CommandOperationExplainDone})
+				}
+			}
+		}
 	}
 	if f.state.Phase == PhaseOperationInterlude {
 		f.Apply(f.state.HostID, Command{Kind: CommandAdvanceInterlude})
@@ -169,12 +178,12 @@ func (f *gameFixture) DealAllOperations() {
 		f.t.Fatalf("start operation dealing: %v", err)
 	}
 	f.state.PlannedOperation = op.definition.ID
-	if err := beginPlannedOperation(&f.state); err != nil {
+	if err := f.state.beginPlannedOperation(); err != nil {
 		f.t.Fatalf("begin first operation: %v", err)
 	}
 	for f.state.OperationDeals < f.state.OperationDealTarget {
 		f.state.Phase = PhaseOperationInterlude
-		if err := advanceInterlude(&f.state, f.now); err != nil {
+		if err := f.state.advanceInterlude(f.now); err != nil {
 			f.t.Fatalf("advance operation dealing: %v", err)
 		}
 	}

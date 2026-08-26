@@ -15,12 +15,13 @@ import (
 )
 
 func main() {
-	rooms := room.NewRegistry()
+	rooms := room.NewManager()
 	defer rooms.Close()
 
+	handler := httpapi.New(rooms)
 	server := &http.Server{
 		Addr:              ":8080",
-		Handler:           httpapi.New(rooms),
+		Handler:           handler,
 		ReadHeaderTimeout: 5 * time.Second,
 		ReadTimeout:       15 * time.Second,
 		WriteTimeout:      15 * time.Second,

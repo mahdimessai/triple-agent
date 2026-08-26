@@ -15,16 +15,17 @@ type joinLobbyRequest struct {
 }
 
 type leaveLobbyRequest struct {
-	RoomID         string `json:"room_id"`
-	PlayerID       string `json:"player_id"`
+	JoinCode       string `json:"join_code"`
 	ReconnectToken string `json:"reconnect_token"`
 }
 
 type lobbyResponse struct {
-	RoomID         string `json:"room_id"`
 	JoinCode       string `json:"join_code"`
-	PlayerID       string `json:"player_id"`
 	ReconnectToken string `json:"reconnect_token"`
+}
+
+type leaveLobbyResponse struct {
+	Left bool `json:"left"`
 }
 
 func (h *handler) createLobby(w http.ResponseWriter, r *http.Request) {
@@ -35,15 +36,18 @@ func (h *handler) createLobby(w http.ResponseWriter, r *http.Request) {
 	}
 	name := strings.TrimSpace(request.PlayerName)
 	if name == "" {
-		writeJSON(w, http.StatusBadRequest, errorResponse{Error: "Player name is required.", Code: "player_name_required"})
+		writeHTTPError(w, newAPIError(http.StatusBadRequest, "player_name_required", "Player name is required."))
 		return
 	}
-	created, err := h.rooms.Create(name)
+	credentials, err := h.roomManager.Create(name)
 	if err != nil {
 		writeHTTPError(w, err)
 		return
 	}
-	writeJSON(w, http.StatusCreated, lobbyResponse{RoomID: created.RoomID, JoinCode: created.JoinCode, PlayerID: created.PlayerID, ReconnectToken: created.ReconnectToken})
+	writeJSON(w, http.StatusCreated, lobbyResponse{
+		JoinCode:       credentials.JoinCode,
+		ReconnectToken: credentials.ReconnectToken,
+	})
 }
 
 func (h *handler) joinLobby(w http.ResponseWriter, r *http.Request) {
@@ -54,20 +58,23 @@ func (h *handler) joinLobby(w http.ResponseWriter, r *http.Request) {
 	}
 	code := strings.ToUpper(strings.TrimSpace(request.JoinCode))
 	if code == "" {
-		writeJSON(w, http.StatusBadRequest, errorResponse{Error: "Join code is required.", Code: "join_code_required"})
+		writeHTTPError(w, newAPIError(http.StatusBadRequest, "join_code_required", "Join code is required."))
 		return
 	}
 	name := strings.TrimSpace(request.PlayerName)
 	if name == "" {
-		writeJSON(w, http.StatusBadRequest, errorResponse{Error: "Player name is required.", Code: "player_name_required"})
+		writeHTTPError(w, newAPIError(http.StatusBadRequest, "player_name_required", "Player name is required."))
 		return
 	}
-	joined, err := h.rooms.Join(code, name)
+	credentials, err := h.roomManager.Join(code, name)
 	if err != nil {
 		writeHTTPError(w, err)
 		return
 	}
-	writeJSON(w, http.StatusCreated, lobbyResponse{RoomID: joined.RoomID, JoinCode: joined.JoinCode, PlayerID: joined.PlayerID, ReconnectToken: joined.ReconnectToken})
+	writeJSON(w, http.StatusCreated, lobbyResponse{
+		JoinCode:       credentials.JoinCode,
+		ReconnectToken: credentials.ReconnectToken,
+	})
 }
 
 func (h *handler) leaveLobby(w http.ResponseWriter, r *http.Request) {
@@ -76,13 +83,13 @@ func (h *handler) leaveLobby(w http.ResponseWriter, r *http.Request) {
 		writeHTTPError(w, err)
 		return
 	}
-	if strings.TrimSpace(request.RoomID) == "" || strings.TrimSpace(request.PlayerID) == "" || strings.TrimSpace(request.ReconnectToken) == "" {
-		writeJSON(w, http.StatusBadRequest, errorResponse{Error: "Room ID, player ID, and reconnect token are required.", Code: "leave_identity_required"})
+	if strings.TrimSpace(request.JoinCode) == "" || strings.TrimSpace(request.ReconnectToken) == "" {
+		writeHTTPError(w, newAPIError(http.StatusBadRequest, "leave_identity_required", "Join code and reconnect token are required."))
 		return
 	}
-	if err := h.rooms.Leave(request.RoomID, request.PlayerID, request.ReconnectToken); err != nil {
+	if err := h.roomManager.Leave(request.JoinCode, request.ReconnectToken); err != nil {
 		writeHTTPError(w, err)
 		return
 	}
-	writeJSON(w, http.StatusOK, map[string]bool{"left": true})
+	writeJSON(w, http.StatusOK, leaveLobbyResponse{Left: true})
 }

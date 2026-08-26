@@ -1,7 +1,6 @@
 package room
 
 import (
-	"errors"
 	"sync"
 	"time"
 
@@ -9,21 +8,15 @@ import (
 )
 
 const (
-	roomLifetime      = 4 * time.Hour
-	endedRoomLifetime = 15 * time.Minute
+	defaultRoomLifetime      = 1 * time.Hour
+	defaultEndedRoomLifetime = 15 * time.Minute
 )
 
-var (
-	ErrClosed          = errors.New("room is closed")
-	ErrUnauthorized    = errors.New("invalid reconnect token")
-	ErrSessionGone     = errors.New("session is no longer active")
-	ErrVersionConflict = errors.New("stale room version")
-)
-
+// Room represents an active room actor orchestrating game state, timers, and client sessions.
 type Room struct {
-	id       string
-	requests chan request
-	done     chan struct{}
+	id    string
+	inbox chan RoomMessage
+	done  chan struct{}
 
 	closeOnce sync.Once
 	onClose   func(*Room)
@@ -32,113 +25,139 @@ type Room struct {
 	endedAfter time.Duration
 }
 
-type runtime struct {
-	state    game.State
-	tokens   map[string]string
-	sessions map[string]session
+func newRoom(roomID string, state game.State, tokens *TokenDirectory, onClose func(*Room)) *Room {
+	return newRoomWithLifetimes(roomID, state, tokens, onClose, defaultRoomLifetime, defaultEndedRoomLifetime)
 }
 
-type session struct {
-	id    string
-	send  func(game.Projection) error
-	close func()
-}
-
-type requestKind uint8
-
-const (
-	requestJoin requestKind = iota
-	requestLeave
-	requestAttach
-	requestDetach
-	requestCommand
-	requestSnapshot
-)
-
-type request struct {
-	kind requestKind
-
-	playerID string
-	name     string
-	token    string
-
-	sessionID string
-	send      func(game.Projection) error
-	close     func()
-
-	expectedVersion uint64
-	command         game.Command
-
-	reply chan response
-}
-
-type response struct {
-	projection game.Projection
-	err        error
-}
-
-func newRoom(roomID string, state game.State, tokens map[string]string, onClose func(*Room)) *Room {
-	return newRoomWithLifetimes(roomID, state, tokens, onClose, roomLifetime, endedRoomLifetime)
-}
-
-func newRoomWithLifetimes(roomID string, state game.State, tokens map[string]string, onClose func(*Room), lifetime, endedAfter time.Duration) *Room {
-	r := &Room{id: roomID, requests: make(chan request), done: make(chan struct{}), onClose: onClose, lifetime: lifetime, endedAfter: endedAfter}
-	go r.loop(runtime{state: state, tokens: cloneTokens(tokens), sessions: make(map[string]session)})
+func newRoomWithLifetimes(roomID string, state game.State, tokens *TokenDirectory, onClose func(*Room), lifetime, endedAfter time.Duration) *Room {
+	r := &Room{
+		id:         roomID,
+		inbox:      make(chan RoomMessage),
+		done:       make(chan struct{}),
+		onClose:    onClose,
+		lifetime:   lifetime,
+		endedAfter: endedAfter,
+	}
+	core := NewRoomCore(roomID, state, tokens)
+	go r.loop(core)
 	return r
 }
 
-func (r *Room) Close() { r.closeOnce.Do(func() { close(r.done) }) }
+func (r *Room) Close() {
+	r.closeOnce.Do(func() {
+		close(r.done)
+	})
+}
 
 func (r *Room) Join(playerID, name, reconnectToken string) error {
-	_, err := r.call(request{kind: requestJoin, playerID: playerID, name: name, token: reconnectToken})
-	return err
+	reply := make(chan error, 1)
+	if err := r.dispatch(JoinCmd{PlayerID: playerID, Name: name, Token: reconnectToken, Reply: reply}); err != nil {
+		return err
+	}
+	select {
+	case <-r.done:
+		return ErrClosed
+	case err := <-reply:
+		return err
+	}
 }
 
 func (r *Room) Leave(playerID, reconnectToken string) error {
-	_, err := r.call(request{kind: requestLeave, playerID: playerID, token: reconnectToken})
-	return err
+	reply := make(chan error, 1)
+	if err := r.dispatch(LeaveCmd{PlayerID: playerID, Token: reconnectToken, Reply: reply}); err != nil {
+		return err
+	}
+	select {
+	case <-r.done:
+		return ErrClosed
+	case err := <-reply:
+		return err
+	}
+}
+
+func (r *Room) PlayerIDForToken(token string) (string, error) {
+	reply := make(chan PlayerIDResult, 1)
+	if err := r.dispatch(PlayerIDForTokenQuery{Token: token, Reply: reply}); err != nil {
+		return "", err
+	}
+	select {
+	case <-r.done:
+		return "", ErrClosed
+	case res := <-reply:
+		return res.PlayerID, res.Err
+	}
+}
+
+func (r *Room) AttachSession(token string, session ClientSession) (string, game.Projection, error) {
+	reply := make(chan AttachResult, 1)
+	if err := r.dispatch(AttachSessionCmd{Token: token, Session: session, Reply: reply}); err != nil {
+		return "", game.Projection{}, err
+	}
+	select {
+	case <-r.done:
+		return "", game.Projection{}, ErrClosed
+	case res := <-reply:
+		return res.PlayerID, res.Projection, res.Err
+	}
 }
 
 func (r *Room) Attach(playerID, reconnectToken, sessionID string, send func(game.Projection) error, close func()) error {
-	_, err := r.call(request{kind: requestAttach, playerID: playerID, token: reconnectToken, sessionID: sessionID, send: send, close: close})
+	session := CallbackSession{
+		SessionID: sessionID,
+		SendFunc:  send,
+		CloseFunc: close,
+	}
+	_, _, err := r.AttachSession(reconnectToken, session)
 	return err
 }
 
 func (r *Room) Detach(playerID, sessionID string) {
-	_, _ = r.call(request{kind: requestDetach, playerID: playerID, sessionID: sessionID})
+	reply := make(chan error, 1)
+	_ = r.dispatch(DetachSessionCmd{PlayerID: playerID, SessionID: sessionID, Reply: reply})
 }
 
 func (r *Room) Command(playerID, sessionID string, expectedVersion uint64, command game.Command) error {
-	_, err := r.call(request{kind: requestCommand, playerID: playerID, sessionID: sessionID, expectedVersion: expectedVersion, command: command})
-	return err
+	reply := make(chan error, 1)
+	if err := r.dispatch(ExecGameCmd{
+		PlayerID:        playerID,
+		SessionID:       sessionID,
+		ExpectedVersion: expectedVersion,
+		Command:         command,
+		Reply:           reply,
+	}); err != nil {
+		return err
+	}
+	select {
+	case <-r.done:
+		return ErrClosed
+	case err := <-reply:
+		return err
+	}
 }
 
 func (r *Room) Snapshot(playerID string) (game.Projection, error) {
-	result, err := r.call(request{kind: requestSnapshot, playerID: playerID})
-	return result.projection, err
-}
-
-func (r *Room) call(req request) (response, error) {
-	req.reply = make(chan response, 1)
-	select {
-	case <-r.done:
-		return response{}, ErrClosed
-	case r.requests <- req:
+	reply := make(chan SnapshotResult, 1)
+	if err := r.dispatch(SnapshotQuery{PlayerID: playerID, Reply: reply}); err != nil {
+		return game.Projection{}, err
 	}
 	select {
-	case result := <-req.reply:
-		return result, result.err
 	case <-r.done:
-		select {
-		case result := <-req.reply:
-			return result, result.err
-		default:
-			return response{}, ErrClosed
-		}
+		return game.Projection{}, ErrClosed
+	case res := <-reply:
+		return res.Projection, res.Err
 	}
 }
 
-func (r *Room) loop(rt runtime) {
+func (r *Room) dispatch(msg RoomMessage) error {
+	select {
+	case <-r.done:
+		return ErrClosed
+	case r.inbox <- msg:
+		return nil
+	}
+}
+
+func (r *Room) loop(core *RoomCore) {
 	expiryTimer := time.NewTimer(r.lifetime)
 	var deadlineTimer *time.Timer
 	var deadlineC <-chan time.Time
@@ -147,16 +166,17 @@ func (r *Room) loop(rt runtime) {
 		stopTimer(expiryTimer)
 		expiryTimer.Reset(duration)
 	}
+
 	resetDeadline := func() {
 		if deadlineTimer != nil {
 			stopTimer(deadlineTimer)
 			deadlineTimer = nil
 			deadlineC = nil
 		}
-		if rt.state.DiscussionDeadline == nil || (rt.state.Phase != game.PhaseDiscussion && rt.state.Phase != game.PhaseOperationInterlude) {
+		if core.State.DiscussionDeadline == nil || (core.State.Phase != game.PhaseDiscussion && core.State.Phase != game.PhaseOperationInterlude) {
 			return
 		}
-		duration := time.Until(*rt.state.DiscussionDeadline)
+		duration := time.Until(*core.State.DiscussionDeadline)
 		if duration <= 0 {
 			duration = time.Nanosecond
 		}
@@ -170,11 +190,7 @@ func (r *Room) loop(rt runtime) {
 		if deadlineTimer != nil {
 			stopTimer(deadlineTimer)
 		}
-		for _, current := range rt.sessions {
-			if current.close != nil {
-				current.close()
-			}
-		}
+		core.CloseAllSessions()
 		r.Close()
 		if r.onClose != nil {
 			r.onClose(r)
@@ -190,268 +206,148 @@ func (r *Room) loop(rt runtime) {
 			return
 
 		case now := <-deadlineC:
-			next, err := game.AdvanceDeadline(rt.state, now.UTC())
-			if err == nil && next.Version != rt.state.Version {
-				rt.state = next
-				if r.broadcast(&rt, now.UTC()) {
+			next, err := game.AdvanceDeadline(core.State, now.UTC())
+			if err == nil && next.Version != core.State.Version {
+				core.State = next
+				if r.broadcast(core, now.UTC(), "") {
 					return
 				}
 			}
 			resetDeadline()
 
-		case req := <-r.requests:
+		case rawMsg := <-r.inbox:
 			now := time.Now().UTC()
-			switch req.kind {
-			case requestJoin:
-				if req.token == "" {
-					req.reply <- response{err: ErrUnauthorized}
+			switch msg := rawMsg.(type) {
+			case PlayerIDForTokenQuery:
+				playerID, ok := core.Tokens.PlayerID(msg.Token)
+				if !ok {
+					msg.Reply <- PlayerIDResult{Err: ErrUnauthorized}
 					continue
 				}
-				next, err := game.AddPlayer(rt.state, req.playerID, req.name)
+				msg.Reply <- PlayerIDResult{PlayerID: playerID}
+
+			case JoinCmd:
+				err := core.HandleJoin(msg.PlayerID, msg.Name, msg.Token)
 				if err == nil {
-					rt.state = next
-					rt.tokens[req.playerID] = req.token
-					if r.broadcast(&rt, now) {
-						req.reply <- response{}
+					if r.broadcast(core, now, "") {
+						msg.Reply <- nil
 						return
 					}
 					resetExpiry(r.lifetime)
 				}
-				req.reply <- response{err: err}
+				msg.Reply <- err
 
-			case requestLeave:
-				if !authorized(rt.tokens, req.playerID, req.token) {
-					req.reply <- response{err: ErrUnauthorized}
-					continue
-				}
-				next, err := game.Leave(rt.state, req.playerID)
+			case LeaveCmd:
+				err := core.HandleLeave(msg.PlayerID, msg.Token)
+				msg.Reply <- err
 				if err != nil {
-					req.reply <- response{err: err}
 					continue
 				}
-				rt.state = next
-				delete(rt.tokens, req.playerID)
-				closeSession(rt.sessions, req.playerID)
-				req.reply <- response{}
-				if game.Empty(rt.state) {
+				if core.IsEmpty() {
 					return
 				}
-				if r.broadcast(&rt, now) {
+				if r.broadcast(core, now, "") {
 					return
 				}
 				resetExpiry(r.lifetime)
 
-			case requestAttach:
-				if !authorized(rt.tokens, req.playerID, req.token) {
-					req.reply <- response{err: ErrUnauthorized}
-					continue
-				}
-				if !game.HasPlayer(rt.state, req.playerID) {
-					req.reply <- response{err: game.ErrPlayerNotInRoom}
-					continue
-				}
-				closeSession(rt.sessions, req.playerID)
-				next, err := game.Connect(rt.state, req.playerID)
+			case AttachSessionCmd:
+				playerID, projection, err := core.HandleAttach(msg.Token, msg.Session)
 				if err != nil {
-					req.reply <- response{err: err}
+					msg.Reply <- AttachResult{Err: err}
 					continue
 				}
-				rt.state = next
-				rt.sessions[req.playerID] = session{id: req.sessionID, send: req.send, close: req.close}
-				projection := game.Project(r.id, rt.state, req.playerID)
-				if req.send == nil {
-					err = errors.New("session sender is required")
-				} else {
-					err = req.send(projection)
-				}
-				if err != nil {
-					delete(rt.sessions, req.playerID)
-					disconnected, disconnectErr := game.Disconnect(rt.state, req.playerID, now)
-					if disconnectErr == nil {
-						rt.state = disconnected
-						if !game.HasPlayer(rt.state, req.playerID) {
-							delete(rt.tokens, req.playerID)
-						}
-					}
-					req.reply <- response{err: err}
-					if game.Empty(rt.state) {
+				// Deliver initial projection directly to the newly attached session
+				if sendErr := msg.Session.Send(projection); sendErr != nil {
+					core.EvictFailedSessions([]string{playerID}, now)
+					msg.Reply <- AttachResult{Err: sendErr}
+					if core.IsEmpty() {
 						return
 					}
 					continue
 				}
-				req.reply <- response{}
-				if r.broadcastExcept(&rt, req.playerID, now) {
+				msg.Reply <- AttachResult{PlayerID: playerID, Projection: projection}
+				if r.broadcast(core, now, playerID) {
 					return
 				}
 				resetDeadline()
 
-			case requestDetach:
-				current, exists := rt.sessions[req.playerID]
-				if !exists || current.id != req.sessionID {
-					req.reply <- response{}
+			case DetachSessionCmd:
+				changed, err := core.HandleDetach(msg.PlayerID, msg.SessionID, now)
+				msg.Reply <- err
+				if err != nil {
 					continue
 				}
-				delete(rt.sessions, req.playerID)
-				next, err := game.Disconnect(rt.state, req.playerID, now)
-				if err == nil {
-					rt.state = next
-					if !game.HasPlayer(rt.state, req.playerID) {
-						delete(rt.tokens, req.playerID)
+				if core.IsEmpty() {
+					return
+				}
+				if changed {
+					if r.broadcast(core, now, "") {
+						return
 					}
+					resetDeadline()
 				}
-				req.reply <- response{err: err}
-				if err != nil {
-					continue
-				}
-				if game.Empty(rt.state) {
-					return
-				}
-				if r.broadcast(&rt, now) {
-					return
-				}
-				resetDeadline()
 
-			case requestCommand:
-				current, exists := rt.sessions[req.playerID]
-				if !exists || current.id != req.sessionID {
-					req.reply <- response{err: ErrSessionGone}
-					continue
-				}
-				if req.expectedVersion != rt.state.Version {
-					req.reply <- response{err: ErrVersionConflict}
-					continue
-				}
-				before := rt.state
-				next, err := game.Apply(before, req.playerID, req.command, now)
+			case ExecGameCmd:
+				err := core.HandleGameCommand(msg.PlayerID, msg.SessionID, msg.ExpectedVersion, msg.Command, now)
+				msg.Reply <- err
 				if err != nil {
-					req.reply <- response{err: err}
 					continue
 				}
-				if next.Version == before.Version {
-					req.reply <- response{}
-					continue
-				}
-				rt.state = next
-				cleanupRemovedPlayers(&rt)
-				req.reply <- response{}
-				if game.Empty(rt.state) {
+				if core.IsEmpty() {
 					return
 				}
-				if r.broadcast(&rt, now) {
+				if r.broadcast(core, now, "") {
 					return
 				}
 				resetDeadline()
-				switch rt.state.Phase {
+				switch core.State.Phase {
 				case game.PhaseEnd:
 					resetExpiry(r.endedAfter)
 				default:
-					if req.command.Kind == game.CommandRematch || req.command.Kind == game.CommandStartMatch {
+					if msg.Command.Kind == game.CommandRematch || msg.Command.Kind == game.CommandStartMatch {
 						resetExpiry(r.lifetime)
 					}
 				}
 
-			case requestSnapshot:
-				if !game.HasPlayer(rt.state, req.playerID) {
-					req.reply <- response{err: game.ErrPlayerNotInRoom}
-					continue
-				}
-				req.reply <- response{projection: game.Project(r.id, rt.state, req.playerID)}
+			case SnapshotQuery:
+				proj, err := core.Snapshot(msg.PlayerID)
+				msg.Reply <- SnapshotResult{Projection: proj, Err: err}
 			}
 		}
 	}
 }
 
-func (r *Room) broadcast(rt *runtime, now time.Time) bool {
-	return r.broadcastExcept(rt, "", now)
+func (r *Room) broadcast(core *RoomCore, now time.Time, excludePlayerID string) bool {
+	for {
+		failed := r.deliverProjections(core, excludePlayerID)
+		if len(failed) == 0 {
+			return core.IsEmpty()
+		}
+		changed := core.EvictFailedSessions(failed, now)
+		if core.IsEmpty() {
+			return true
+		}
+		if !changed {
+			return false
+		}
+		excludePlayerID = "" // Retrying full broadcast as state changed
+	}
 }
 
-func (r *Room) broadcastExcept(rt *runtime, excluded string, now time.Time) bool {
-	failed := r.deliver(rt, excluded)
-	if len(failed) == 0 {
-		return game.Empty(rt.state)
-	}
-	changed := r.disconnectFailed(rt, failed, now)
-	if game.Empty(rt.state) {
-		return true
-	}
-	if !changed {
-		return false
-	}
-	failed = r.deliver(rt, "")
-	if len(failed) > 0 {
-		r.disconnectFailed(rt, failed, now)
-	}
-	return game.Empty(rt.state)
-}
-
-func (r *Room) deliver(rt *runtime, excluded string) []string {
-	failed := make([]string, 0)
-	public := game.PublicProjectionFor(r.id, rt.state)
-	for playerID, current := range rt.sessions {
-		if playerID == excluded {
+func (r *Room) deliverProjections(core *RoomCore, excludePlayerID string) []string {
+	var failed []string
+	public := game.PublicProjectionFor(r.id, core.State)
+	for playerID, session := range core.Sessions {
+		if playerID == excludePlayerID {
 			continue
 		}
-		if current.send == nil || current.send(game.ProjectWithPublic(rt.state, playerID, public)) != nil {
-			delete(rt.sessions, playerID)
-			if current.close != nil {
-				current.close()
-			}
+		projection := game.ProjectWithPublic(core.State, playerID, public)
+		if session == nil || session.Send(projection) != nil {
 			failed = append(failed, playerID)
 		}
 	}
 	return failed
-}
-
-func (r *Room) disconnectFailed(rt *runtime, failed []string, now time.Time) bool {
-	changed := false
-	for _, playerID := range failed {
-		before := rt.state.Version
-		next, err := game.Disconnect(rt.state, playerID, now)
-		if err != nil {
-			continue
-		}
-		rt.state = next
-		if next.Version != before {
-			changed = true
-		}
-		if !game.HasPlayer(rt.state, playerID) {
-			delete(rt.tokens, playerID)
-		}
-	}
-	return changed
-}
-
-func cleanupRemovedPlayers(rt *runtime) {
-	for playerID := range rt.tokens {
-		if !game.HasPlayer(rt.state, playerID) {
-			delete(rt.tokens, playerID)
-			closeSession(rt.sessions, playerID)
-		}
-	}
-}
-
-func closeSession(sessions map[string]session, playerID string) {
-	current, ok := sessions[playerID]
-	if !ok {
-		return
-	}
-	delete(sessions, playerID)
-	if current.close != nil {
-		current.close()
-	}
-}
-
-func authorized(tokens map[string]string, playerID, token string) bool {
-	expected, ok := tokens[playerID]
-	return ok && expected == token && token != ""
-}
-
-func cloneTokens(source map[string]string) map[string]string {
-	copyMap := make(map[string]string, len(source))
-	for id, token := range source {
-		copyMap[id] = token
-	}
-	return copyMap
 }
 
 func stopTimer(timer *time.Timer) {

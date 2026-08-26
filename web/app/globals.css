@@ -1613,6 +1613,54 @@ button.ta-header-brand:active {
   }
 }
 
+.ta-biometric-pad {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  user-select: none;
+  touch-action: none;
+  -webkit-touch-callout: none;
+  cursor: pointer;
+}
+
+.ta-scanner-beam {
+  position: absolute;
+  left: 0;
+  right: 0;
+  height: 3px;
+  background: var(--ta-teal, #51d3c2);
+  box-shadow: 0 0 10px #51d3c2, 0 0 20px #51d3c2;
+  animation: ta-scanner-sweep 1s ease-in-out infinite alternate;
+  pointer-events: none;
+  z-index: 10;
+}
+
+@keyframes ta-scanner-sweep {
+  0% {
+    top: 10%;
+    opacity: 0.7;
+  }
+  100% {
+    top: 90%;
+    opacity: 1;
+  }
+}
+
+.ta-scanner-pulse {
+  animation: ta-scanner-pulse-anim 1.5s ease-in-out infinite;
+}
+
+@keyframes ta-scanner-pulse-anim {
+  0%, 100% {
+    box-shadow: 0 0 0 0 rgba(81, 211, 194, 0.4);
+  }
+  50% {
+    box-shadow: 0 0 0 12px rgba(81, 211, 194, 0);
+  }
+}
+
 @media (prefers-reduced-motion: reduce) {
   *,
   *::before,
@@ -1623,3 +1671,4 @@ button.ta-header-brand:active {
     transition-duration: 0.01ms !important;
   }
 }
+

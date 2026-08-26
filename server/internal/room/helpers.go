@@ -3,10 +3,8 @@ package room
 import (
 	"crypto/rand"
 	"encoding/hex"
-	"strings"
 )
 
-// generate the room code
 func newJoinCode() string {
 	const chars = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789"
 	bytes := make([]byte, 6)
@@ -26,5 +24,3 @@ func randomHex(size int) string {
 	}
 	return hex.EncodeToString(bytes)
 }
-
-func codeKey(code string) string { return strings.ToUpper(strings.TrimSpace(code)) }

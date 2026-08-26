@@ -20,13 +20,13 @@ var (
 )
 
 type handler struct {
-	rooms    *room.Registry
-	upgrader websocket.Upgrader
+	roomManager *room.RoomManager
+	upgrader    websocket.Upgrader
 }
 
-func New(rooms *room.Registry) http.Handler {
+func New(roomManager *room.RoomManager) http.Handler {
 	h := &handler{
-		rooms: rooms,
+		roomManager: roomManager,
 		upgrader: websocket.Upgrader{
 			ReadBufferSize:  1024,
 			WriteBufferSize: 1024,
@@ -45,14 +45,15 @@ func New(rooms *room.Registry) http.Handler {
 }
 
 func (h *handler) health(w http.ResponseWriter, _ *http.Request) {
-	writeJSON(w, http.StatusOK, map[string]string{"status": "ok"})
+	writeJSON(w, http.StatusOK, healthResponse{Status: "ok"})
 }
 
 func withCORS(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		w.Header().Set("Access-Control-Allow-Origin", "*")
-		w.Header().Set("Access-Control-Allow-Headers", "*")
-		w.Header().Set("Access-Control-Allow-Methods", "*")
+		header := w.Header()
+		header["Access-Control-Allow-Origin"] = []string{"*"}
+		header["Access-Control-Allow-Headers"] = []string{"*"}
+		header["Access-Control-Allow-Methods"] = []string{"*"}
 		if r.Method == http.MethodOptions {
 			w.WriteHeader(http.StatusNoContent)
 			return
@@ -66,8 +67,12 @@ type errorResponse struct {
 	Code  string `json:"code,omitempty"`
 }
 
+type healthResponse struct {
+	Status string `json:"status"`
+}
+
 func writeJSON(w http.ResponseWriter, status int, value any) {
-	w.Header().Set("Content-Type", "application/json")
+	w.Header()["Content-Type"] = []string{"application/json"}
 	w.WriteHeader(status)
 	_ = json.NewEncoder(w).Encode(value)
 }
@@ -77,50 +82,18 @@ func decodeJSON(w http.ResponseWriter, r *http.Request, destination any) error {
 	decoder := json.NewDecoder(r.Body)
 	decoder.DisallowUnknownFields()
 	if err := decoder.Decode(destination); err != nil {
-		return errInvalidJSON
+		return newAPIError(http.StatusBadRequest, "invalid_json", "Invalid JSON.")
 	}
 	var extra any
 	if err := decoder.Decode(&extra); !errors.Is(err, io.EOF) {
-		return errMultipleJSON
+		return newAPIError(http.StatusBadRequest, "invalid_json", "Request must contain one JSON value.")
 	}
 	return nil
 }
 
 func writeHTTPError(w http.ResponseWriter, err error) {
-	status, code, message := classifyHTTPError(err)
-	writeJSON(w, status, errorResponse{Error: message, Code: code})
-}
-
-func classifyHTTPError(err error) (int, string, string) {
-	switch {
-	case errors.Is(err, errInvalidJSON):
-		return http.StatusBadRequest, "invalid_json", "Invalid JSON."
-	case errors.Is(err, errMultipleJSON):
-		return http.StatusBadRequest, "invalid_json", "Request must contain one JSON value."
-	case errors.Is(err, room.ErrRoomNotFound), errors.Is(err, room.ErrClosed):
-		return http.StatusNotFound, "room_not_found", "Lobby not found."
-	case errors.Is(err, room.ErrUnauthorized):
-		return http.StatusUnauthorized, "unauthorized", "Invalid reconnect token."
-	case errors.Is(err, game.ErrRoomFull):
-		return http.StatusConflict, "room_full", "Room is full."
-	case errors.Is(err, game.ErrNotAllowed):
-		return http.StatusConflict, "not_allowed", "Lobby has already started."
-	case errors.Is(err, game.ErrPlayerNotInRoom):
-		return http.StatusUnauthorized, "player_not_in_room", "This player is no longer seated in the room."
-	default:
-		return http.StatusInternalServerError, "internal", "Internal server error."
-	}
-}
-
-func sessionError(err error) (int, string, string) {
-	switch {
-	case errors.Is(err, room.ErrRoomNotFound), errors.Is(err, room.ErrClosed):
-		return http.StatusGone, "room_gone", "Room is no longer available."
-	case errors.Is(err, room.ErrUnauthorized), errors.Is(err, game.ErrPlayerNotInRoom):
-		return http.StatusUnauthorized, "unauthorized", "Authentication is required."
-	default:
-		return http.StatusInternalServerError, "internal", "Room authentication unavailable."
-	}
+	apiErr := apiErrorFor(err)
+	writeJSON(w, apiErr.Status, errorResponse{Error: apiErr.Message, Code: apiErr.Code})
 }
 
 func commandError(err error) (string, string) {

@@ -14,6 +14,7 @@ export type GameShellProps = {
   onToggleSettings(): void;
   onLeave(): void;
   onHome?: () => void;
+  onVoteKick?(targetId: string): void;
   children: ReactNode;
 };
 
@@ -34,6 +35,7 @@ export function GameShell({
   settingsOpen,
   onToggleSettings,
   onLeave,
+  onVoteKick,
   children,
 }: GameShellProps) {
   const connection = connectionText(status);
@@ -97,6 +99,42 @@ export function GameShell({
         </header>
         {connection ? <p className="ta-connection-banner" role="status">{connection}</p> : null}
         {error ? <p className="ta-connection-banner" role="alert">{error}</p> : null}
+        {projection.public.vote_kicks?.map((kick) => {
+          if (kick.target_id === projection.private.player_id) return null;
+          return (
+            <aside
+              key={kick.target_id}
+              className="flex flex-wrap items-center justify-between gap-2 border-b-4 border-black bg-ta-gold px-3 py-2 text-ta-ink ta-condensed text-xs sm:text-sm tracking-wider"
+              role="status"
+              aria-live="polite"
+            >
+              <div className="flex items-center gap-2 font-bold uppercase">
+                <span aria-hidden="true">⚠️</span>
+                <span>
+                  AGENT {kick.target_name} IS OFFLINE{" "}
+                  <span className="opacity-80">
+                    ({kick.votes}/{kick.required} votes to expel)
+                  </span>
+                </span>
+              </div>
+              <div>
+                {kick.has_voted ? (
+                  <span className="inline-block border-2 border-black/40 bg-black/10 px-2 py-1 text-[0.7rem] uppercase font-bold tracking-widest text-ta-ink/70">
+                    [VOTED (WAITING FOR OTHERS)]
+                  </span>
+                ) : (
+                  <button
+                    type="button"
+                    className="inline-block border-2 border-black bg-ta-red px-2 py-1 text-[0.7rem] uppercase font-bold tracking-widest text-ta-paper hover:bg-black hover:text-white transition-colors cursor-pointer"
+                    onClick={() => onVoteKick?.(kick.target_id)}
+                  >
+                    [EXPEL INACTIVE AGENT]
+                  </button>
+                )}
+              </div>
+            </aside>
+          );
+        })}
         <div className="ta-stage"><div className="ta-stage-inner">{children}</div></div>
       </section>
     </main>

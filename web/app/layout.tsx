@@ -1,5 +1,5 @@
 import type { Metadata, Viewport } from "next";
-import { RetireLegacyServiceWorker } from "./legacy-service-worker";
+import { RetireLegacyServiceWorker } from "@/features/pwa/retire-legacy-service-worker";
 import "./globals.css";
 
 export const metadata: Metadata = {

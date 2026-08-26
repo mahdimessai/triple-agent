@@ -1,10 +1,10 @@
-import { Game } from "./_game/game";
-import { InstallApp } from "./install-app";
+import { InstallApp } from "@/features/pwa/install-app";
+import { TripleAgentGame } from "@/features/triple-agent";
 
 export default function Home() {
   return (
     <>
-      <Game />
+      <TripleAgentGame />
       <InstallApp />
     </>
   );

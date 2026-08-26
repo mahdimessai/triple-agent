@@ -123,11 +123,11 @@ func defaultEnabledOperations() map[string]bool {
 
 func beginSimple(kind string) func(*State) error {
 	return func(state *State) error {
-		return beginOperation(state, operations[kind].definition)
+		return state.beginOperation(operations[kind].definition)
 	}
 }
 
-func beginOperation(state *State, definition operationDefinition) error {
+func (state *State) beginOperation(definition operationDefinition) error {
 	if len(state.PlayerOrder) == 0 {
 		return ErrNotEnoughPlayers
 	}
@@ -136,12 +136,12 @@ func beginOperation(state *State, definition operationDefinition) error {
 		return ErrNotEnoughPlayers
 	}
 	state.ActivePlayerID = activeID
-	state.Operation = &OperationState{Kind: definition.ID, InputOwnerID: activeID, Step: 1}
+	state.Operation = &OperationState{Kind: definition.ID, InputOwnerID: activeID, Step: 1, Acks: make(map[string]bool)}
 	return nil
 }
 
 func beginPrivate(state *State, kind string, resolve func(*State) error) error {
-	if err := beginOperation(state, operations[kind].definition); err != nil {
+	if err := state.beginOperation(operations[kind].definition); err != nil {
 		return err
 	}
 	return resolve(state)
@@ -274,7 +274,7 @@ func beginTwoFriends(state *State) error {
 }
 
 func beginChooseVoteShield(state *State) error {
-	if err := beginOperation(state, operations["ChooseVoteShield"].definition); err != nil {
+	if err := state.beginOperation(operations["ChooseVoteShield"].definition); err != nil {
 		return err
 	}
 	state.Operation.InputOwnerID = state.ActivePlayerID
@@ -453,7 +453,7 @@ func operationFor(kind string) (operation, error) {
 	return op, nil
 }
 
-func beginPlannedOperation(state *State) error {
+func (state *State) beginPlannedOperation() error {
 	op, err := operationFor(state.PlannedOperation)
 	if err != nil {
 		return err
@@ -766,7 +766,9 @@ func requiredTarget(state *State, command Command) (string, error) {
 
 func operationTargetIDs(command Command) []string {
 	if len(command.TargetIDs) > 0 {
-		return append([]string(nil), command.TargetIDs...)
+		// Apply validates and consumes commands synchronously, so validation can
+		// borrow the caller-owned slice; resolvers copy targets when persisting them.
+		return command.TargetIDs
 	}
 	if command.TargetID != "" {
 		return []string{command.TargetID}
@@ -785,11 +787,26 @@ func otherPlayerIDs(state State, playerID string) []string {
 }
 
 func chooseRandomOther(state *State, playerID string) string {
-	players := otherPlayerIDs(*state, playerID)
-	if len(players) == 0 {
+	count := 0
+	for _, id := range state.PlayerOrder {
+		if id != playerID {
+			count++
+		}
+	}
+	if count <= 0 {
 		return ""
 	}
-	return players[nextRandom(state, len(players))]
+	index := nextRandom(state, count)
+	for _, id := range state.PlayerOrder {
+		if id == playerID {
+			continue
+		}
+		if index == 0 {
+			return id
+		}
+		index--
+	}
+	return ""
 }
 
 func chooseRandomOthers(state *State, playerID string, count int) []string {

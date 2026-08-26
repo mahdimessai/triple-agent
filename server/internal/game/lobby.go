@@ -1,6 +1,8 @@
 package game
 
 import (
+	"maps"
+	"slices"
 	"strings"
 	"time"
 )
@@ -28,10 +30,12 @@ func AddPlayer(state State, playerID, name string) (State, error) {
 	if _, exists := state.Players[playerID]; exists {
 		return state, ErrPlayerExists
 	}
-	next := cloneState(state)
+	next := state
+	next.Players = maps.Clone(state.Players)
+	next.PlayerOrder = slices.Clone(state.PlayerOrder)
 	next.Players[playerID] = Player{ID: playerID, Name: strings.TrimSpace(name), CanVote: true, VotingPower: 1}
 	next.PlayerOrder = append(next.PlayerOrder, playerID)
-	return committed(next), nil
+	return next.committed(), nil
 }
 
 func Connect(state State, playerID string) (State, error) {
@@ -42,11 +46,13 @@ func Connect(state State, playerID string) (State, error) {
 	if player.Connected {
 		return state, nil
 	}
-	next := cloneState(state)
+	next := copyPlayers(state)
+	next = copyVoteKicks(next)
 	player = next.Players[playerID]
 	player.Connected = true
 	next.Players[playerID] = player
-	return committed(next), nil
+	delete(next.VoteKicks, playerID)
+	return next.committed(), nil
 }
 
 func Leave(state State, playerID string) (State, error) {
@@ -56,9 +62,9 @@ func Leave(state State, playerID string) (State, error) {
 	if _, ok := state.Players[playerID]; !ok {
 		return state, ErrPlayerNotInRoom
 	}
-	next := cloneState(state)
-	removePlayer(&next, playerID)
-	return committed(next), nil
+	next := copyStateForPlayerRemoval(state)
+	next.removePlayer(playerID)
+	return next.committed(), nil
 }
 
 func Disconnect(state State, playerID string, now time.Time) (State, error) {
@@ -66,48 +72,17 @@ func Disconnect(state State, playerID string, now time.Time) (State, error) {
 	if !ok {
 		return state, ErrPlayerNotInRoom
 	}
-	if state.Phase == PhaseLobby {
-		next := cloneState(state)
-		player = next.Players[playerID]
-		player.Connected = false
-		next.Players[playerID] = player
-		if next.HostID == playerID {
-			transferHost(&next)
-		}
-		return committed(next), nil
-	}
 	if !player.Connected && state.HostID != playerID {
 		return state, nil
 	}
-	next := cloneState(state)
+	next := copyPlayers(state)
 	player = next.Players[playerID]
 	player.Connected = false
 	next.Players[playerID] = player
 	if next.HostID == playerID {
-		transferHost(&next)
+		next.transferHost()
 	}
-	if next.Operation != nil && next.ActivePlayerID == playerID && (next.Phase == PhaseOperationInput || next.Phase == PhaseOperationResult) {
-		next.Operation.PrivateResults = nil
-		next.Phase = PhaseDiscussion
-		next.ActivePlayerID = ""
-		next.DiscussionAcks = make(map[string]bool, len(next.PlayerOrder))
-		next.DiscussionDeadline = nil
-		if next.Settings.DiscussionTimerEnabled {
-			deadline := now.Add(time.Duration(next.Settings.DiscussionSeconds) * time.Second)
-			next.DiscussionDeadline = &deadline
-		}
-		return committed(next), nil
-	}
-	if next.Phase == PhaseRoleReveal && allRoleAcks(next) {
-		if err := beginPlannedOperation(&next); err != nil {
-			return state, err
-		}
-	}
-	if next.Phase == PhaseVoteInput && allVotesSubmitted(next) {
-		resolveVote(&next)
-		next.Phase = PhaseResultsIntro
-	}
-	return committed(next), nil
+	return next.committed(), nil
 }
 
 func Empty(state State) bool { return len(state.PlayerOrder) == 0 }
@@ -117,7 +92,7 @@ func HasPlayer(state State, playerID string) bool {
 	return ok
 }
 
-func removePlayer(state *State, playerID string) {
+func (state *State) removePlayer(playerID string) {
 	delete(state.Players, playerID)
 	remaining := state.PlayerOrder[:0]
 	for _, id := range state.PlayerOrder {
@@ -129,12 +104,24 @@ func removePlayer(state *State, playerID string) {
 	delete(state.RoleAcks, playerID)
 	delete(state.DiscussionAcks, playerID)
 	delete(state.Vote.Submitted, playerID)
+	for voterID, targetID := range state.Vote.Submitted {
+		if targetID == playerID {
+			delete(state.Vote.Submitted, voterID)
+		}
+	}
+	delete(state.VoteKicks, playerID)
+	for tID, voters := range state.VoteKicks {
+		delete(voters, playerID)
+		if len(voters) == 0 {
+			delete(state.VoteKicks, tID)
+		}
+	}
 	if state.HostID == playerID {
 		state.HostID = replacementHost(*state)
 	}
 }
 
-func transferHost(state *State) {
+func (state *State) transferHost() {
 	for _, id := range state.PlayerOrder {
 		if state.Players[id].Connected {
 			state.HostID = id
@@ -155,7 +142,7 @@ func replacementHost(state State) string {
 	return ""
 }
 
-func resetForRematch(state *State) {
+func (state *State) resetForRematch() {
 	for _, id := range state.PlayerOrder {
 		player := state.Players[id]
 		player.Ready = false
@@ -187,6 +174,7 @@ func resetForRematch(state *State) {
 	state.Operation = nil
 	state.DiscussionDeadline = nil
 	state.Vote = VoteState{Submitted: map[string]string{}, Totals: map[string]int{}}
+	state.VoteKicks = nil
 	state.Winner = FactionNone
 }
 
@@ -198,31 +186,51 @@ func standardVirusCount(playerCount int) int {
 }
 
 func allRoleAcks(state State) bool {
-	connected := 0
+	if len(state.PlayerOrder) == 0 {
+		return false
+	}
 	for _, id := range state.PlayerOrder {
-		if !state.Players[id].Connected {
-			continue
-		}
-		connected++
 		if !state.RoleAcks[id] {
 			return false
 		}
 	}
-	return connected > 0
+	return true
+}
+
+func allRoleAcksAfter(state State, acknowledgedID string) bool {
+	if len(state.PlayerOrder) == 0 {
+		return false
+	}
+	for _, id := range state.PlayerOrder {
+		if id != acknowledgedID && !state.RoleAcks[id] {
+			return false
+		}
+	}
+	return true
 }
 
 func allDiscussionAcks(state State) bool {
-	connected := 0
+	if len(state.PlayerOrder) == 0 {
+		return false
+	}
 	for _, id := range state.PlayerOrder {
-		if !state.Players[id].Connected {
-			continue
-		}
-		connected++
 		if !state.DiscussionAcks[id] {
 			return false
 		}
 	}
-	return connected > 0
+	return true
+}
+
+func allDiscussionAcksAfter(state State, acknowledgedID string) bool {
+	if len(state.PlayerOrder) == 0 {
+		return false
+	}
+	for _, id := range state.PlayerOrder {
+		if id != acknowledgedID && !state.DiscussionAcks[id] {
+			return false
+		}
+	}
+	return true
 }
 
 func nextRandom(state *State, max int) int {
