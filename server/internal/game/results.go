@@ -1,5 +1,7 @@
 package game
 
+import "slices"
+
 func allVotesSubmitted(state State) bool {
 	voters := 0
 	for _, id := range state.PlayerOrder {
@@ -86,12 +88,7 @@ func countCurrentVirus(state State) int {
 }
 
 func hasStatus(player Player, status string) bool {
-	for _, candidate := range player.Statuses {
-		if candidate == status {
-			return true
-		}
-	}
-	return false
+	return slices.Contains(player.Statuses, status)
 }
 
 func consumeStatus(player *Player, status string) bool {
