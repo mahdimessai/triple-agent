@@ -3,7 +3,6 @@ package room
 import (
 	"errors"
 	"sync"
-	"sync/atomic"
 	"testing"
 	"time"
 
@@ -96,17 +95,14 @@ func TestStaleDetachDoesNotDisconnectReplacementSession(t *testing.T) {
 	state := game.NewLobby("p1", "Host")
 	active := newRoom("room", state, TokensFromMap(map[string]string{"p1": "token"}), nil)
 	defer active.Close()
-	var oldClosed atomic.Bool
-	if err := active.Attach("p1", "token", "old", func(game.Projection) error { return nil }, func() { oldClosed.Store(true) }); err != nil {
+	if err := active.Attach("p1", "token", "old", func(game.Projection) error { return nil }, nil); err != nil {
 		t.Fatal(err)
-	}
-	if err := active.Attach("p1", "token", "new", func(game.Projection) error { return nil }, nil); err != nil {
-		t.Fatal(err)
-	}
-	if !oldClosed.Load() {
-		t.Fatal("replacement did not close old session")
 	}
 	active.Detach("p1", "old")
+	if err := active.Attach("p1", "token", "new", func(game.Projection) error { return nil }, nil); err != nil {
+		t.Fatalf("reattach after clean detach rejected: %v", err)
+	}
+	active.Detach("p1", "old") // stale duplicate of the first detach
 	projection, err := active.Snapshot("p1")
 	if err != nil {
 		t.Fatal(err)

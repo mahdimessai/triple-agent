@@ -38,7 +38,7 @@ function serializeCommand(command: ClientCommand, expectedVersion: number, reque
 
 function closeDetails(error: SessionError): Omit<Extract<RoomSocketEvent, { type: "closed" }>, "type"> {
   return {
-    terminal: error.status === 401 || error.status === 410 || error.code === "session_superseded",
+    terminal: error.status === 401 || error.status === 410,
     status: error.status,
     message: error.error,
     ...(error.code ? { code: error.code } : {}),

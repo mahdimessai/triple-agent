@@ -20,8 +20,9 @@ const (
 	authTimeout = 5 * time.Second
 	readLimit   = 16 << 10
 	writeWait   = 10 * time.Second
-	pongWait    = 60 * time.Second
-	pingPeriod  = (pongWait * 9) / 10
+	// pongWait bounds how long a dead connection can keep holding its seat:
+	pongWait   = 15 * time.Second
+	pingPeriod = (pongWait * 9) / 10
 )
 
 type authMessage struct {

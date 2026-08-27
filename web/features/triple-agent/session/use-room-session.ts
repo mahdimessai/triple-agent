@@ -2,7 +2,7 @@
 
 import { useEffect, useReducer, useRef } from "react";
 import type { ClientCommand, RoomIdentity, RoomProjection } from "../protocol";
-import { createRoom as createRoomRequest, joinRoom as joinRoomRequest, leaveRoom as leaveRoomRequest } from "../transport/room-api";
+import { createRoom as createRoomRequest, joinRoom as joinRoomRequest, leaveRoom as leaveRoomRequest, releaseSeatOnPageHide } from "../transport/room-api";
 import { connectRoom, type RoomSocket, type RoomSocketEvent } from "../transport/room-socket";
 import { RECONNECT_GRACE_PERIOD_MS, reconnectDelay } from "./reconnect-policy";
 import { INITIAL_ROOM_STATE, roomReducer, type RoomNotice, type UseRoomResult } from "./room-state";
@@ -11,6 +11,11 @@ import { clearRoomIdentity, loadRoomIdentity, saveRoomIdentity } from "./room-st
 const SESSION_EXPIRED_MESSAGE = "This room session has expired";
 const OFFLINE_SESSION_EXPIRED_MESSAGE = "The room session expired after five minutes offline";
 const KICKED_MESSAGE = "You have been removed from the lobby by the host.";
+const ALREADY_OPEN_MESSAGE = "This room is already open in another tab.";
+// A live seat rejects reattaches with "session_active". A reconnecting client
+// rides through those rejections until the stale seat is reaped (pong timeout)
+// or the release beacon frees it; past this many refusals it gives up instead.
+const MAX_ACTIVE_SEAT_REFUSALS = 6;
 
 function errorMessage(cause: unknown, fallback: string): string {
   return cause instanceof Error && cause.message ? cause.message : fallback;
@@ -26,6 +31,12 @@ export function useRoomSession(): UseRoomResult {
   const projectionVersionRef = useRef(-1);
   const phaseRef = useRef<RoomProjection["public"]["phase"] | null>(null);
   const actionLockRef = useRef(false);
+  const identityRef = useRef<RoomIdentity | null>(null);
+  const activeSeatRefusalsRef = useRef(0);
+
+  useEffect(() => {
+    identityRef.current = state.identity;
+  }, [state.identity]);
 
   function cancelReconnect(): void {
     if (reconnectTimerRef.current !== null) {
@@ -72,6 +83,7 @@ export function useRoomSession(): UseRoomResult {
     socketRef.current?.close();
     socketRef.current = null;
     const generation = ++connectionGenerationRef.current;
+    activeSeatRefusalsRef.current = 0;
     let latestPhase: RoomProjection["public"]["phase"] | null = null;
     let resyncPending = false;
     dispatch({ type: "connect-started", identity, reconnecting });
@@ -81,6 +93,7 @@ export function useRoomSession(): UseRoomResult {
       if (event.type === "open") {
         reconnectAttemptRef.current = 0;
         reconnectDeadlineRef.current = null;
+        activeSeatRefusalsRef.current = 0;
         dispatch({ type: "connected" });
         return;
       }
@@ -108,6 +121,17 @@ export function useRoomSession(): UseRoomResult {
       if (event.terminal) {
         if (event.status === 401 && latestPhase === "LOBBY") { endSession({ kind: "kicked", message: KICKED_MESSAGE, joinCode: identity.join_code }); return; }
         endSession({ kind: "session-expired", message: event.message ?? SESSION_EXPIRED_MESSAGE });
+        return;
+      }
+      if (event.code === "session_active") {
+        // A fresh tab hitting an occupied seat stops here; a client restoring
+        // its own dropped session retries until the seat frees up.
+        if (!reconnecting || activeSeatRefusalsRef.current >= MAX_ACTIVE_SEAT_REFUSALS) {
+          endSession({ kind: "session-expired", message: event.message ?? ALREADY_OPEN_MESSAGE });
+          return;
+        }
+        activeSeatRefusalsRef.current += 1;
+        scheduleReconnect(identity);
         return;
       }
       scheduleReconnect(identity);
@@ -144,14 +168,19 @@ export function useRoomSession(): UseRoomResult {
     };
     const handlePageShow = () => handleResume();
     const handleOnline = () => handleResume();
+    const handlePageHide = () => {
+      if (identityRef.current) releaseSeatOnPageHide(identityRef.current);
+    };
 
     document.addEventListener("visibilitychange", handleVisibilityChange);
     window.addEventListener("pageshow", handlePageShow);
     window.addEventListener("online", handleOnline);
+    window.addEventListener("pagehide", handlePageHide);
     return () => {
       document.removeEventListener("visibilitychange", handleVisibilityChange);
       window.removeEventListener("pageshow", handlePageShow);
       window.removeEventListener("online", handleOnline);
+      window.removeEventListener("pagehide", handlePageHide);
       disconnect();
     };
     // Room connection resources intentionally live for the hook lifetime.

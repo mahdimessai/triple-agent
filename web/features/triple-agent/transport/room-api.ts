@@ -41,9 +41,9 @@ export async function leaveRoom(identity: RoomIdentity): Promise<void> {
   });
 }
 
-export function leaveRoomOnPageHide(identity: RoomIdentity): void {
+export function releaseSeatOnPageHide(identity: RoomIdentity): void {
   const body = JSON.stringify({ join_code: identity.join_code, reconnect_token: identity.reconnect_token });
-  const url = apiUrl("/api/lobbies/leave");
+  const url = apiUrl("/api/lobbies/release");
   if (typeof navigator !== "undefined" && typeof navigator.sendBeacon === "function") {
     const accepted = navigator.sendBeacon(url, new Blob([body], { type: "text/plain;charset=UTF-8" }));
     if (accepted) return;

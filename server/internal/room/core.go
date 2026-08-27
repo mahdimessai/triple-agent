@@ -66,7 +66,9 @@ func (c *RoomCore) HandleAttach(token string, session ClientSession) (string, ga
 		return "", game.Projection{}, game.ErrPlayerNotInRoom
 	}
 
-	c.CloseSession(playerID)
+	if _, occupied := c.Sessions[playerID]; occupied {
+		return "", game.Projection{}, ErrSessionActive
+	}
 	next, err := game.Connect(c.State, playerID)
 	if err != nil {
 		return "", game.Projection{}, err
@@ -93,6 +95,28 @@ func (c *RoomCore) HandleDetach(playerID, sessionID string, now time.Time) (bool
 	if !game.HasPlayer(c.State, playerID) {
 		c.Tokens.Remove(playerID)
 	}
+	return changed, nil
+}
+
+// HandleReleaseSession detaches a player's live session identified only by
+// their reconnect token, e.g. when a page-hide beacon frees the seat ahead of a
+// refresh or tab close. It is a no-op when no session is live. Unlike a normal
+// detach — where the dying socket owns its own teardown — the released
+// transport is still healthy, so it is closed here.
+func (c *RoomCore) HandleReleaseSession(token string, now time.Time) (bool, error) {
+	playerID, ok := c.Tokens.PlayerID(token)
+	if !ok {
+		return false, ErrUnauthorized
+	}
+	current, exists := c.Sessions[playerID]
+	if !exists {
+		return false, nil
+	}
+	changed, err := c.HandleDetach(playerID, current.ID(), now)
+	if err != nil {
+		return changed, err
+	}
+	current.Close()
 	return changed, nil
 }
 
