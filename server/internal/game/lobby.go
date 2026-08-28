@@ -30,6 +30,12 @@ func AddPlayer(state State, playerID, name string) (State, error) {
 	if _, exists := state.Players[playerID]; exists {
 		return state, ErrPlayerExists
 	}
+	name = strings.TrimSpace(name)
+	for _, seated := range state.Players {
+		if strings.EqualFold(seated.Name, name) {
+			return state, ErrNameTaken
+		}
+	}
 	next := state
 	next.Players = maps.Clone(state.Players)
 	next.PlayerOrder = slices.Clone(state.PlayerOrder)

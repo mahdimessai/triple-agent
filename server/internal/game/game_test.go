@@ -83,6 +83,28 @@ func TestDuplicatePlayerIDIsRejected(t *testing.T) {
 	}
 }
 
+func TestAddPlayerRejectsDuplicateNames(t *testing.T) {
+	state := NewLobby("p1", "Host")
+	state, err := AddPlayer(state, "p2", "Guest")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := AddPlayer(state, "p3", "host"); !errors.Is(err, ErrNameTaken) {
+		t.Fatalf("case-insensitive host clash: got %v, want ErrNameTaken", err)
+	}
+	if _, err := AddPlayer(state, "p3", "  GUEST  "); !errors.Is(err, ErrNameTaken) {
+		t.Fatalf("padded-name clash: got %v, want ErrNameTaken", err)
+	}
+
+	state, err = Leave(state, "p2")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := AddPlayer(state, "p3", "guest"); err != nil {
+		t.Fatalf("name should be free after leave: %v", err)
+	}
+}
+
 func TestReadyDoesNotCreatePresence(t *testing.T) {
 	state := NewLobby("p1", "Host")
 	state, err := AddPlayer(state, "p2", "P2")

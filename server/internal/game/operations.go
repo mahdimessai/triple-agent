@@ -314,9 +314,10 @@ func resolveDetector(state *State, command Command) error {
 			break
 		}
 	}
-	code, message := "NO_VIRUS_FOUND", "Secret Intel found no VIRUS agent among the two selected players."
+	firstName, secondName := state.Players[targets[0]].Name, state.Players[targets[1]].Name
+	code, message := "NO_VIRUS_FOUND", fmt.Sprintf("Neither %s nor %s is VIRUS.", firstName, secondName)
 	if hasVirus {
-		code, message = "AT_LEAST_ONE_VIRUS", "Secret Intel found at least one VIRUS agent among the two selected players."
+		code, message = "AT_LEAST_ONE_VIRUS", fmt.Sprintf("Either %s or %s is VIRUS.", firstName, secondName)
 	}
 	state.Operation.TargetPlayerIDs = append([]string(nil), targets...)
 	state.Operation.PrivateResults = map[string]OperationResult{state.ActivePlayerID: {Code: code, TargetPlayerIDs: append([]string(nil), targets...), Message: message}}

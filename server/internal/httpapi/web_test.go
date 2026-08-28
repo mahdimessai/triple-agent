@@ -79,6 +79,33 @@ func TestCreateJoinLeaveContract(t *testing.T) {
 	}
 }
 
+func TestJoinRejectsDuplicateName(t *testing.T) {
+	registry := room.NewRegistry()
+	defer registry.Close()
+	handler := New(registry)
+
+	createdResponse := doJSON(t, handler, http.MethodPost, "/api/lobbies", `{"player_name":"Host"}`)
+	if createdResponse.Code != http.StatusCreated {
+		t.Fatalf("create status=%d body=%s", createdResponse.Code, createdResponse.Body.String())
+	}
+	var created lobbyResponse
+	if err := json.Unmarshal(createdResponse.Body.Bytes(), &created); err != nil {
+		t.Fatal(err)
+	}
+
+	duplicate := doJSON(t, handler, http.MethodPost, "/api/lobbies/join", `{"join_code":"`+created.JoinCode+`","player_name":"host"}`)
+	if duplicate.Code != http.StatusConflict {
+		t.Fatalf("duplicate join status=%d body=%s", duplicate.Code, duplicate.Body.String())
+	}
+	var payload errorResponse
+	if err := json.Unmarshal(duplicate.Body.Bytes(), &payload); err != nil {
+		t.Fatal(err)
+	}
+	if payload.Code != "name_taken" || payload.Error == "" {
+		t.Fatalf("duplicate join payload=%+v", payload)
+	}
+}
+
 func TestJSONValidationPreservesStrictContract(t *testing.T) {
 	registry := room.NewRegistry()
 	defer registry.Close()
@@ -124,6 +151,60 @@ func TestSessionMissingRoomMapsToGone(t *testing.T) {
 	apiErr := sessionError(room.ErrRoomNotFound)
 	if apiErr.Status != http.StatusGone || apiErr.Code != "room_gone" || apiErr.Message != "Room is no longer available." {
 		t.Fatalf("api error=%+v", apiErr)
+	}
+}
+
+func TestSessionActiveMapsToConflictForWebSocket(t *testing.T) {
+	apiErr := sessionError(room.ErrSessionActive)
+	if apiErr.Status != http.StatusConflict || apiErr.Code != "session_active" || apiErr.Message != "This seat is already connected in another tab." {
+		t.Fatalf("api error=%+v", apiErr)
+	}
+}
+
+func TestReleaseEndpointContract(t *testing.T) {
+	registry := room.NewRegistry()
+	defer registry.Close()
+	handler := New(registry)
+
+	createdResponse := doJSON(t, handler, http.MethodPost, "/api/lobbies", `{"player_name":"Host"}`)
+	if createdResponse.Code != http.StatusCreated {
+		t.Fatalf("create status=%d body=%s", createdResponse.Code, createdResponse.Body.String())
+	}
+	var created lobbyResponse
+	if err := json.Unmarshal(createdResponse.Body.Bytes(), &created); err != nil {
+		t.Fatal(err)
+	}
+
+	release := doJSON(t, handler, http.MethodPost, "/api/lobbies/release", `{"join_code":"`+created.JoinCode+`","reconnect_token":"`+created.ReconnectToken+`"}`)
+	if release.Code != http.StatusOK {
+		t.Fatalf("release status=%d body=%s", release.Code, release.Body.String())
+	}
+	var payload releaseLobbyResponse
+	if err := json.Unmarshal(release.Body.Bytes(), &payload); err != nil {
+		t.Fatal(err)
+	}
+	if !payload.Released {
+		t.Fatalf("release payload=%+v", payload)
+	}
+
+	idempotent := doJSON(t, handler, http.MethodPost, "/api/lobbies/release", `{"join_code":"`+created.JoinCode+`","reconnect_token":"`+created.ReconnectToken+`"}`)
+	if idempotent.Code != http.StatusOK {
+		t.Fatalf("idempotent release status=%d body=%s", idempotent.Code, idempotent.Body.String())
+	}
+
+	unauthorized := doJSON(t, handler, http.MethodPost, "/api/lobbies/release", `{"join_code":"`+created.JoinCode+`","reconnect_token":"wrong"}`)
+	if unauthorized.Code != http.StatusUnauthorized {
+		t.Fatalf("bad token status=%d body=%s", unauthorized.Code, unauthorized.Body.String())
+	}
+
+	missing := doJSON(t, handler, http.MethodPost, "/api/lobbies/release", `{"join_code":"NOPE","reconnect_token":"x"}`)
+	if missing.Code != http.StatusNotFound {
+		t.Fatalf("missing room status=%d body=%s", missing.Code, missing.Body.String())
+	}
+
+	badRequest := doJSON(t, handler, http.MethodPost, "/api/lobbies/release", `{"join_code":""}`)
+	if badRequest.Code != http.StatusBadRequest {
+		t.Fatalf("missing identity status=%d body=%s", badRequest.Code, badRequest.Body.String())
 	}
 }
 

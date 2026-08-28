@@ -19,6 +19,11 @@ type leaveLobbyRequest struct {
 	ReconnectToken string `json:"reconnect_token"`
 }
 
+type releaseLobbyRequest struct {
+	JoinCode       string `json:"join_code"`
+	ReconnectToken string `json:"reconnect_token"`
+}
+
 type lobbyResponse struct {
 	JoinCode       string `json:"join_code"`
 	ReconnectToken string `json:"reconnect_token"`
@@ -26,6 +31,10 @@ type lobbyResponse struct {
 
 type leaveLobbyResponse struct {
 	Left bool `json:"left"`
+}
+
+type releaseLobbyResponse struct {
+	Released bool `json:"released"`
 }
 
 func (h *handler) createLobby(w http.ResponseWriter, r *http.Request) {
@@ -92,4 +101,25 @@ func (h *handler) leaveLobby(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	writeJSON(w, http.StatusOK, leaveLobbyResponse{Left: true})
+}
+
+// releaseLobby detaches a live connection without removing the player from the
+// room. Called via sendBeacon on page hide so refreshes and tab closes free the
+// seat immediately instead of waiting for socket liveness timeouts.
+func (h *handler) releaseLobby(w http.ResponseWriter, r *http.Request) {
+	var request releaseLobbyRequest
+	if err := decodeJSON(w, r, &request); err != nil {
+		writeHTTPError(w, err)
+		return
+	}
+	code := strings.ToUpper(strings.TrimSpace(request.JoinCode))
+	if code == "" || strings.TrimSpace(request.ReconnectToken) == "" {
+		writeHTTPError(w, newAPIError(http.StatusBadRequest, "release_identity_required", "Join code and reconnect token are required."))
+		return
+	}
+	if err := h.roomManager.ReleaseSession(code, request.ReconnectToken); err != nil {
+		writeHTTPError(w, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, releaseLobbyResponse{Released: true})
 }

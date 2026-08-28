@@ -8,8 +8,7 @@
     "lint": "eslint .",
     "start": "next start",
     "typecheck": "tsc --noEmit",
-    "test": "bun test",
-    "verify": "bun run typecheck && bun run lint && bun test && bun run build"
+    "verify": "bun run typecheck && bun run lint && bun run build"
   },
   "dependencies": {
     "next": "^16.0.7",

@@ -212,6 +212,7 @@ var (
 	ErrRoomFull             = errors.New("room is full")
 	ErrPlayerNotInRoom      = errors.New("player is not in room")
 	ErrPlayerExists         = errors.New("player already exists")
+	ErrNameTaken            = errors.New("player name already in use")
 )
 
 func (state *State) committed() State {
@@ -348,9 +349,7 @@ func cloneBoolMap(source map[string]bool) map[string]bool {
 		return nil
 	}
 	copyMap := make(map[string]bool, len(source))
-	for key, value := range source {
-		copyMap[key] = value
-	}
+	maps.Copy(copyMap, source)
 	return copyMap
 }
 
@@ -359,9 +358,7 @@ func cloneStringMap(source map[string]string) map[string]string {
 		return nil
 	}
 	copyMap := make(map[string]string, len(source))
-	for key, value := range source {
-		copyMap[key] = value
-	}
+	maps.Copy(copyMap, source)
 	return copyMap
 }
 
@@ -370,8 +367,6 @@ func cloneIntMap(source map[string]int) map[string]int {
 		return nil
 	}
 	copyMap := make(map[string]int, len(source))
-	for key, value := range source {
-		copyMap[key] = value
-	}
+	maps.Copy(copyMap, source)
 	return copyMap
 }

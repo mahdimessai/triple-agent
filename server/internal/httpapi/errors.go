@@ -41,6 +41,8 @@ func apiErrorFor(err error) *APIError {
 		return newAPIError(http.StatusUnauthorized, "unauthorized", "Invalid reconnect token.")
 	case errors.Is(err, game.ErrRoomFull):
 		return newAPIError(http.StatusConflict, "room_full", "Room is full.")
+	case errors.Is(err, game.ErrNameTaken):
+		return newAPIError(http.StatusConflict, "name_taken", "That agent name is already seated in this lobby.")
 	case errors.Is(err, game.ErrNotAllowed):
 		return newAPIError(http.StatusConflict, "not_allowed", "Lobby has already started.")
 	case errors.Is(err, game.ErrPlayerNotInRoom):
@@ -56,6 +58,8 @@ func sessionError(err error) *APIError {
 		return newAPIError(http.StatusGone, "room_gone", "Room is no longer available.")
 	case errors.Is(err, room.ErrUnauthorized), errors.Is(err, game.ErrPlayerNotInRoom):
 		return newAPIError(http.StatusUnauthorized, "unauthorized", "Authentication is required.")
+	case errors.Is(err, room.ErrSessionActive):
+		return newAPIError(http.StatusConflict, "session_active", "This seat is already connected in another tab.")
 	default:
 		return newAPIError(http.StatusInternalServerError, "internal", "Room authentication unavailable.")
 	}
