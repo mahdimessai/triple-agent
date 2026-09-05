@@ -1,0 +1,15 @@
+{
+  "compilerOptions": {
+    "target": "ES2022",
+    "lib": ["ES2022", "DOM", "DOM.Iterable"],
+    "module": "CommonJS",
+    "moduleResolution": "Node",
+    "strict": true,
+    "esModuleInterop": true,
+    "skipLibCheck": true,
+    "types": [],
+    "rootDir": "..",
+    "outDir": "../.test-dist"
+  },
+  "include": ["../app/_game/protocol.ts", "../app/_game/room.ts", "../app/_game/assets.ts", "../app/_game/operations.ts", "./*.test.ts", "./types/*.d.ts"]
+}
