@@ -116,21 +116,6 @@ func (r *Room) Detach(playerID, sessionID string) {
 	_ = r.dispatch(DetachSessionCmd{PlayerID: playerID, SessionID: sessionID, Reply: reply})
 }
 
-// ReleaseSession detaches the live connection of the token's player without
-// removing them from the room. It is a no-op when nothing is attached.
-func (r *Room) ReleaseSession(reconnectToken string) error {
-	reply := make(chan error, 1)
-	if err := r.dispatch(ReleaseSessionCmd{Token: reconnectToken, Reply: reply}); err != nil {
-		return err
-	}
-	select {
-	case <-r.done:
-		return ErrClosed
-	case err := <-reply:
-		return err
-	}
-}
-
 func (r *Room) Command(playerID, sessionID string, expectedVersion uint64, command game.Command) error {
 	reply := make(chan error, 1)
 	if err := r.dispatch(ExecGameCmd{
@@ -289,22 +274,6 @@ func (r *Room) loop(core *RoomCore) {
 
 			case DetachSessionCmd:
 				changed, err := core.HandleDetach(msg.PlayerID, msg.SessionID, now)
-				msg.Reply <- err
-				if err != nil {
-					continue
-				}
-				if core.IsEmpty() {
-					return
-				}
-				if changed {
-					if r.broadcast(core, now, "") {
-						return
-					}
-					resetDeadline()
-				}
-
-			case ReleaseSessionCmd:
-				changed, err := core.HandleReleaseSession(msg.Token, now)
 				msg.Reply <- err
 				if err != nil {
 					continue

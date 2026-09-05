@@ -1,6 +1,6 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useState } from "react";
 import type { ClientCommand, RoomProjection } from "../protocol";
 import type { PendingCommand } from "../use-room";
 import { countDeckOperations } from "../operations";
@@ -67,20 +67,6 @@ export type LobbyScreenProps = {
   error?: string | null;
 };
 
-function disambiguate(players: Array<{ name: string; seat: number }>): string[] {
-  const counts = new Map<string, number>();
-  for (const player of players) {
-    counts.set(player.name, (counts.get(player.name) ?? 0) + 1);
-  }
-  const seen = new Map<string, number>();
-  return players.map((player) => {
-    if ((counts.get(player.name) ?? 0) <= 1) return player.name;
-    const index = (seen.get(player.name) ?? 0) + 1;
-    seen.set(player.name, index);
-    return `${player.name} (${index})`;
-  });
-}
-
 export function LobbyScreen({
   projection,
   joinCode,
@@ -100,16 +86,12 @@ export function LobbyScreen({
   const isHost = hostId === selfId;
   const me = roster.find((player) => player.id === selfId);
 
-  const displayNames = useMemo(() => disambiguate(roster), [roster]);
-  const readyCount = useMemo(() => roster.filter((player) => player.ready).length, [roster]);
+  const readyCount = roster.filter((player) => player.ready).length;
   const minPlayers = projection.public.settings.min_players ?? DEFAULT_MIN_PLAYERS;
   const missingPlayers = Math.max(0, minPlayers - roster.length);
-  const everyoneReady = roster.length >= minPlayers && roster.every((player) => player.ready);
+  const everyoneReady = readyCount === roster.length;
   const canStart = isHost && missingPlayers === 0 && everyoneReady;
-  const enabledOpsCount = useMemo(
-    () => countDeckOperations(projection.public.settings.enabled_operations ?? []),
-    [projection.public.settings.enabled_operations]
-  );
+  const enabledOpsCount = countDeckOperations(projection.public.settings.enabled_operations ?? []);
 
   const readyBusy = pending?.kind === "lobby.ready";
   const startBusy = pending?.kind === "match.start";
@@ -186,7 +168,7 @@ export function LobbyScreen({
 
             {/* Roster List */}
             <div className="grid gap-2">
-              {roster.map((player, index) => {
+              {roster.map((player) => {
                 const isPlayerHost = player.id === hostId;
                 const canManage = isHost && player.id !== selfId;
                 // One line, always: the name truncates, the status badge is pinned
@@ -198,7 +180,7 @@ export function LobbyScreen({
                       {/* Your own seat is marked by the colour of the name rather than a
                           badge; the screen-reader text carries what the colour says. */}
                       <span className={`ta-condensed truncate text-lg ${player.id === selfId ? "text-ta-blue" : ""}`}>
-                        {player.seat}. {displayNames[index]}
+                        {player.seat}. {player.name}
                         {player.id === selfId ? <span className="sr-only"> (you)</span> : null}
                       </span>
                       {isPlayerHost ? (
@@ -215,7 +197,7 @@ export function LobbyScreen({
                             onClick={() => onSend({ kind: "lobby.transfer_host", target_id: player.id })}
                             disabled={Boolean(pending)}
                             type="button"
-                            aria-label={`Make ${displayNames[index]} the host`}
+                            aria-label={`Make ${player.name} the host`}
                             title="Make host"
                           >
                             <HostGlyph />
@@ -225,7 +207,7 @@ export function LobbyScreen({
                             onClick={() => onSend({ kind: "lobby.kick_player", target_id: player.id })}
                             disabled={Boolean(pending)}
                             type="button"
-                            aria-label={`Kick ${displayNames[index]}`}
+                            aria-label={`Kick ${player.name}`}
                             title="Kick from lobby"
                           >
                             <KickGlyph />

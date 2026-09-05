@@ -111,17 +111,6 @@ func (m *RoomManager) Leave(joinCode, token string) error {
 	return active.Leave(playerID, token)
 }
 
-// ReleaseSession detaches any live connection held by the token's player
-// without removing them from the room. Used by the page-hide beacon so a
-// refresh or tab close frees the seat immediately.
-func (m *RoomManager) ReleaseSession(joinCode, token string) error {
-	active, ok := m.GetByCode(joinCode)
-	if !ok {
-		return ErrRoomNotFound
-	}
-	return active.ReleaseSession(token)
-}
-
 // Close closes all active rooms managed by this RoomManager.
 func (m *RoomManager) Close() {
 	m.mu.Lock()

@@ -106,55 +106,40 @@ export function BiometricScanner({
   label,
   sublabel,
 }: BiometricScannerProps) {
-  const [progress, setProgress] = useState(0);
   const [isHolding, setIsHolding] = useState(false);
   const [isCompleted, setIsCompleted] = useState(false);
-  const holdStartRef = useRef<number | null>(null);
-  const timerRef = useRef<ReturnType<typeof setInterval> | null>(null);
+  const timerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   const clearTimer = useCallback(() => {
-    if (timerRef.current) {
-      clearInterval(timerRef.current);
+    if (timerRef.current !== null) {
+      clearTimeout(timerRef.current);
       timerRef.current = null;
     }
   }, []);
 
-  const handleHoldStart = useCallback(() => {
-    if (disabled || isCompleted) return;
+  function handleHoldStart() {
+    if (disabled || isCompleted || timerRef.current !== null) return;
     setIsHolding(true);
-    setProgress(0);
-    const startTime = Date.now();
-    holdStartRef.current = startTime;
-
-    clearTimer();
-    timerRef.current = setInterval(() => {
-      const elapsed = Date.now() - startTime;
-      const currentProgress = Math.min(1, elapsed / holdDurationMs);
-      setProgress(currentProgress);
-
-      if (currentProgress >= 1) {
-        clearTimer();
-        setIsCompleted(true);
-        setIsHolding(false);
-        if (typeof navigator !== "undefined" && navigator.vibrate) {
-          try {
-            navigator.vibrate([40, 30, 40]);
-          } catch {
-            // ignore vibration failures
-          }
+    timerRef.current = setTimeout(() => {
+      timerRef.current = null;
+      setIsCompleted(true);
+      setIsHolding(false);
+      if (typeof navigator !== "undefined" && navigator.vibrate) {
+        try {
+          navigator.vibrate([40, 30, 40]);
+        } catch {
+          // ignore vibration failures
         }
-        onComplete();
       }
-    }, 20);
-  }, [clearTimer, disabled, holdDurationMs, isCompleted, onComplete]);
+      onComplete();
+    }, holdDurationMs);
+  }
 
-  const handleHoldEnd = useCallback(() => {
+  function handleHoldEnd() {
     if (isCompleted) return;
     clearTimer();
     setIsHolding(false);
-    setProgress(0);
-    holdStartRef.current = null;
-  }, [clearTimer, isCompleted]);
+  }
 
   useEffect(() => {
     return () => {
@@ -164,8 +149,7 @@ export function BiometricScanner({
 
   const radius = 54;
   const circumference = 2 * Math.PI * radius;
-  const strokeDashoffset = circumference * (1 - progress);
-  const percent = Math.round(progress * 100);
+  const strokeDashoffset = isHolding || isCompleted ? 0 : circumference;
 
   return (
     <div className={`flex flex-col items-center select-none ${className}`}>
@@ -181,17 +165,7 @@ export function BiometricScanner({
         onPointerUp={handleHoldEnd}
         onPointerLeave={handleHoldEnd}
         onPointerCancel={handleHoldEnd}
-        onTouchStart={(e) => {
-          e.preventDefault();
-          handleHoldStart();
-        }}
-        onTouchEnd={handleHoldEnd}
-        onTouchCancel={handleHoldEnd}
-        onMouseDown={(e) => {
-          if (e.button === 0) handleHoldStart();
-        }}
-        onMouseUp={handleHoldEnd}
-        onMouseLeave={handleHoldEnd}
+        onBlur={handleHoldEnd}
         onKeyDown={(e) => {
           if ((e.key === " " || e.key === "Enter") && !e.repeat) {
             e.preventDefault();
@@ -216,7 +190,7 @@ export function BiometricScanner({
         <svg
           role="progressbar"
           aria-label="Scan progress"
-          aria-valuenow={percent}
+          aria-valuenow={isHolding ? undefined : isCompleted ? 100 : 0}
           aria-valuemin={0}
           aria-valuemax={100}
           className="absolute inset-0 h-full w-full -rotate-90 pointer-events-none p-2"
@@ -240,7 +214,7 @@ export function BiometricScanner({
             strokeLinecap="round"
             strokeDasharray={circumference}
             strokeDashoffset={strokeDashoffset}
-            className="transition-all duration-75"
+            style={{ transition: isHolding ? `stroke-dashoffset ${holdDurationMs}ms linear` : "none" }}
           />
         </svg>
 
@@ -250,7 +224,7 @@ export function BiometricScanner({
         {/* Overlay scan status text */}
         <div className="relative z-10 mt-1 text-center">
           <span className="ta-condensed text-[0.7rem] font-bold tracking-[0.14em] uppercase text-ta-ink">
-            {isHolding ? `SCANNING ${percent}%` : "PLACE THUMB"}
+            {isHolding ? "SCANNING…" : "PLACE THUMB"}
           </span>
         </div>
       </div>
@@ -268,4 +242,3 @@ export function BiometricScanner({
 }
 
 export const FingerprintScanner = BiometricScanner;
-

@@ -39,7 +39,7 @@ func AddPlayer(state State, playerID, name string) (State, error) {
 	next := state
 	next.Players = maps.Clone(state.Players)
 	next.PlayerOrder = slices.Clone(state.PlayerOrder)
-	next.Players[playerID] = Player{ID: playerID, Name: strings.TrimSpace(name), CanVote: true, VotingPower: 1}
+	next.Players[playerID] = Player{ID: playerID, Name: name, CanVote: true, VotingPower: 1}
 	next.PlayerOrder = append(next.PlayerOrder, playerID)
 	return next.committed(), nil
 }

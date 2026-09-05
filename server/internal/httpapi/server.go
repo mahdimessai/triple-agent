@@ -39,7 +39,6 @@ func New(roomManager *room.RoomManager) http.Handler {
 	mux.HandleFunc("GET /healthz", h.health)
 	mux.HandleFunc("POST /api/lobbies", h.createLobby)
 	mux.HandleFunc("POST /api/lobbies/join", h.joinLobby)
-	mux.HandleFunc("POST /api/lobbies/release", h.releaseLobby)
 	mux.HandleFunc("POST /api/lobbies/leave", h.leaveLobby)
 	mux.HandleFunc("GET /ws", h.websocket)
 	return withCORS(mux)

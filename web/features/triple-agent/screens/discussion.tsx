@@ -1,9 +1,9 @@
 "use client";
 
-import { useEffect, useState } from "react";
 import type { ClientCommand, RoomProjection } from "../protocol";
 import type { PendingCommand } from "../use-room";
 import { InkButton, PaperTitle } from "../ui";
+import { useRemainingSeconds } from "./use-remaining-seconds";
 
 export type DiscussionScreenProps = {
   projection: RoomProjection;
@@ -11,47 +11,8 @@ export type DiscussionScreenProps = {
   onSend(command: ClientCommand): void;
 };
 
-function useRemainingSeconds(deadline: string | undefined, enabled: boolean, fallback: number): number {
-  const [remaining, setRemaining] = useState<number>(() => {
-    if (!enabled || !deadline) return fallback;
-    const target = Date.parse(deadline);
-    if (!Number.isFinite(target)) return fallback;
-    return Math.max(0, Math.ceil((target - Date.now()) / 1000));
-  });
-
-  useEffect(() => {
-    if (!enabled || !deadline) return;
-    const target = Date.parse(deadline);
-    if (!Number.isFinite(target)) return;
-    let timer: number | null = null;
-    const tick = () => {
-      const remainingMs = target - Date.now();
-      const next = Math.max(0, Math.ceil(remainingMs / 1000));
-      setRemaining(next);
-      if (timer !== null) window.clearTimeout(timer);
-      timer = next > 0 ? window.setTimeout(tick, Math.max(50, remainingMs % 1000 || 1000)) : null;
-    };
-    const onVisibility = () => {
-      if (timer !== null) window.clearTimeout(timer);
-      timer = null;
-      if (document.visibilityState === "visible") tick();
-    };
-    const initialMs = target - Date.now();
-    const initialSeconds = Math.max(0, Math.ceil(initialMs / 1000));
-    if (initialSeconds > 0) {
-      timer = window.setTimeout(tick, Math.max(50, initialMs % 1000 || 1000));
-    }
-    document.addEventListener("visibilitychange", onVisibility);
-    return () => {
-      if (timer !== null) window.clearTimeout(timer);
-      document.removeEventListener("visibilitychange", onVisibility);
-    };
-  }, [deadline, enabled, fallback]);
-
-  return enabled && deadline ? remaining : fallback;
-}
-
-function Stopwatch({ seconds, duration, enabled }: { seconds: number; duration: number; enabled: boolean }) {
+function Stopwatch({ deadline, duration, enabled }: { deadline?: string; duration: number; enabled: boolean }) {
+  const seconds = useRemainingSeconds(enabled ? deadline : undefined, duration);
   const urgent = enabled && seconds <= 30 && seconds > 0;
   const minutes = Math.floor(seconds / 60);
   const remainder = String(seconds % 60).padStart(2, "0");
@@ -82,7 +43,6 @@ function Stopwatch({ seconds, duration, enabled }: { seconds: number; duration: 
 export function DiscussionScreen({ projection, pending, onSend }: DiscussionScreenProps) {
   const settings = projection.public.settings;
   const duration = settings.discussion_seconds;
-  const remaining = useRemainingSeconds(projection.public.discussion_deadline, settings.discussion_timer_enabled, duration);
   const totalPlayers = projection.public.players.length;
   const readyCount = projection.public.discussion_ready_count ?? 0;
   const busy = pending?.kind === "discussion.advance";
@@ -91,7 +51,7 @@ export function DiscussionScreen({ projection, pending, onSend }: DiscussionScre
     <div className="ta-rise ta-screen">
       <PaperTitle>Discussion phase</PaperTitle>
       <div className="ta-paper p-5 text-center">
-        <Stopwatch seconds={remaining} duration={duration} enabled={settings.discussion_timer_enabled} />
+        <Stopwatch key={`${projection.public.discussion_deadline}:${duration}:${settings.discussion_timer_enabled}`} deadline={projection.public.discussion_deadline} duration={duration} enabled={settings.discussion_timer_enabled} />
         <p className="ta-sans mt-4 text-base leading-snug text-black/80">Discuss suspicions and share clues. Accusations start when the timer expires or when all players vote to accuse early.</p>
       </div>
       {readyCount > 0 ? (

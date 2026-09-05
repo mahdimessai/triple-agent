@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useRef, useState, useSyncExternalStore } from "react";
+import { useEffect, useEffectEvent, useRef, useState, useSyncExternalStore } from "react";
 import { createPortal } from "react-dom";
 import type { ClientCommand, RoomProjection } from "../protocol";
 import type { PendingCommand } from "../use-room";
@@ -41,20 +41,21 @@ export function ClassifiedIntelDialog({
 }) {
   const mounted = useIsMounted();
   const closeButtonRef = useRef<HTMLButtonElement | null>(null);
+  const closeFromKeyboard = useEffectEvent(onClose);
 
   useEffect(() => {
     if (!isOpen) return;
     const previousFocus = document.activeElement instanceof HTMLElement ? document.activeElement : null;
     closeButtonRef.current?.focus();
     function handleKeyDown(event: KeyboardEvent): void {
-      if (event.key === "Escape") onClose();
+      if (event.key === "Escape") closeFromKeyboard();
     }
     window.addEventListener("keydown", handleKeyDown);
     return () => {
       window.removeEventListener("keydown", handleKeyDown);
       previousFocus?.focus();
     };
-  }, [isOpen, onClose]);
+  }, [isOpen]);
 
   if (!isOpen) return null;
 
@@ -346,4 +347,3 @@ export function OperationScreen({ projection, pending, onSend }: OperationScreen
     </div>
   );
 }
-

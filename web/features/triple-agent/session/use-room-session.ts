@@ -2,7 +2,7 @@
 
 import { useEffect, useReducer, useRef } from "react";
 import type { ClientCommand, RoomIdentity, RoomProjection } from "../protocol";
-import { createRoom as createRoomRequest, joinRoom as joinRoomRequest, leaveRoom as leaveRoomRequest, releaseSeatOnPageHide } from "../transport/room-api";
+import { createRoom as createRoomRequest, joinRoom as joinRoomRequest, leaveRoom as leaveRoomRequest } from "../transport/room-api";
 import { connectRoom, type RoomSocket, type RoomSocketEvent } from "../transport/room-socket";
 import { RECONNECT_GRACE_PERIOD_MS, reconnectDelay } from "./reconnect-policy";
 import { INITIAL_ROOM_STATE, roomReducer, type RoomNotice, type UseRoomResult } from "./room-state";
@@ -12,10 +12,6 @@ const SESSION_EXPIRED_MESSAGE = "This room session has expired";
 const OFFLINE_SESSION_EXPIRED_MESSAGE = "The room session expired after five minutes offline";
 const KICKED_MESSAGE = "You have been removed from the lobby by the host.";
 const ALREADY_OPEN_MESSAGE = "This room is already open in another tab.";
-// A live seat rejects reattaches with "session_active". A reconnecting client
-// rides through those rejections until the stale seat is reaped (pong timeout)
-// or the release beacon frees it; past this many refusals it gives up instead.
-const MAX_ACTIVE_SEAT_REFUSALS = 6;
 
 function errorMessage(cause: unknown, fallback: string): string {
   return cause instanceof Error && cause.message ? cause.message : fallback;
@@ -29,14 +25,7 @@ export function useRoomSession(): UseRoomResult {
   const reconnectDeadlineRef = useRef<number | null>(null);
   const connectionGenerationRef = useRef(0);
   const projectionVersionRef = useRef(-1);
-  const phaseRef = useRef<RoomProjection["public"]["phase"] | null>(null);
   const actionLockRef = useRef(false);
-  const identityRef = useRef<RoomIdentity | null>(null);
-  const activeSeatRefusalsRef = useRef(0);
-
-  useEffect(() => {
-    identityRef.current = state.identity;
-  }, [state.identity]);
 
   function cancelReconnect(): void {
     if (reconnectTimerRef.current !== null) {
@@ -57,7 +46,6 @@ export function useRoomSession(): UseRoomResult {
   function endSession(notice: RoomNotice): void {
     disconnect();
     projectionVersionRef.current = -1;
-    phaseRef.current = null;
     clearRoomIdentity();
     dispatch({ type: "session-ended", notice });
   }
@@ -83,9 +71,7 @@ export function useRoomSession(): UseRoomResult {
     socketRef.current?.close();
     socketRef.current = null;
     const generation = ++connectionGenerationRef.current;
-    activeSeatRefusalsRef.current = 0;
     let latestPhase: RoomProjection["public"]["phase"] | null = null;
-    let resyncPending = false;
     dispatch({ type: "connect-started", identity, reconnecting });
 
     const socket = connectRoom(identity, (event: RoomSocketEvent) => {
@@ -93,7 +79,6 @@ export function useRoomSession(): UseRoomResult {
       if (event.type === "open") {
         reconnectAttemptRef.current = 0;
         reconnectDeadlineRef.current = null;
-        activeSeatRefusalsRef.current = 0;
         dispatch({ type: "connected" });
         return;
       }
@@ -109,11 +94,8 @@ export function useRoomSession(): UseRoomResult {
         const incomingVersion = message.public.version;
         const currentVersion = projectionVersionRef.current;
         if (incomingVersion < currentVersion) return;
-        if (resyncPending) resyncPending = false;
-        else if (currentVersion >= 0 && incomingVersion > currentVersion + 1) { resyncPending = true; socket.resync(); return; }
         projectionVersionRef.current = incomingVersion;
         latestPhase = message.public.phase;
-        phaseRef.current = message.public.phase;
         dispatch({ type: "projection", projection: message });
         return;
       }
@@ -123,15 +105,8 @@ export function useRoomSession(): UseRoomResult {
         endSession({ kind: "session-expired", message: event.message ?? SESSION_EXPIRED_MESSAGE });
         return;
       }
-      if (event.code === "session_active") {
-        // A fresh tab hitting an occupied seat stops here; a client restoring
-        // its own dropped session retries until the seat frees up.
-        if (!reconnecting || activeSeatRefusalsRef.current >= MAX_ACTIVE_SEAT_REFUSALS) {
-          endSession({ kind: "session-expired", message: event.message ?? ALREADY_OPEN_MESSAGE });
-          return;
-        }
-        activeSeatRefusalsRef.current += 1;
-        scheduleReconnect(identity);
+      if (event.code === "session_active" && !reconnecting) {
+        endSession({ kind: "session-expired", message: event.message ?? ALREADY_OPEN_MESSAGE });
         return;
       }
       scheduleReconnect(identity);
@@ -152,7 +127,7 @@ export function useRoomSession(): UseRoomResult {
 
   useEffect(() => {
     const storedIdentity = loadRoomIdentity();
-    if (storedIdentity) { phaseRef.current = "LOBBY"; openConnection(storedIdentity, true); }
+    if (storedIdentity) openConnection(storedIdentity, true);
     const handleResume = () => {
       const socket = socketRef.current;
       if (socket && socket.isOpen()) {
@@ -169,7 +144,8 @@ export function useRoomSession(): UseRoomResult {
     const handlePageShow = () => handleResume();
     const handleOnline = () => handleResume();
     const handlePageHide = () => {
-      if (identityRef.current) releaseSeatOnPageHide(identityRef.current);
+      // Close only this page's socket; the server preserves the seat for resume.
+      disconnect();
     };
 
     document.addEventListener("visibilitychange", handleVisibilityChange);
@@ -196,7 +172,6 @@ export function useRoomSession(): UseRoomResult {
     try {
       const identity = await createRoomRequest(name);
       projectionVersionRef.current = -1;
-      phaseRef.current = "LOBBY";
       saveRoomIdentity(identity);
       openConnection(identity, false);
     } catch (cause) { dispatch({ type: "request-failed", message: errorMessage(cause, "Could not create the room") }); }
@@ -214,7 +189,6 @@ export function useRoomSession(): UseRoomResult {
     try {
       const identity = await joinRoomRequest(code, name);
       projectionVersionRef.current = -1;
-      phaseRef.current = "LOBBY";
       saveRoomIdentity(identity);
       openConnection(identity, false);
     } catch (cause) { dispatch({ type: "request-failed", message: errorMessage(cause, "Could not join the room") }); }
@@ -227,7 +201,6 @@ export function useRoomSession(): UseRoomResult {
     dispatch({ type: "leave-started" });
     disconnect();
     projectionVersionRef.current = -1;
-    phaseRef.current = null;
     clearRoomIdentity();
     try { await leaveRoomRequest(identity); dispatch({ type: "left" }); }
     catch (cause) { dispatch({ type: "left", error: errorMessage(cause, "Could not notify the server that you left") }); }

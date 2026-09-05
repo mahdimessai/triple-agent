@@ -54,7 +54,17 @@ export function roomReducer(state: RoomState, action: RoomStateAction): RoomStat
     case "request-failed": return { ...state, status: "idle", error: action.message };
     case "connect-started": return { ...state, identity: action.identity, status: action.reconnecting ? "reconnecting" : "connecting", error: null, pending: null };
     case "connected": return { ...state, status: "online", error: null };
-    case "projection": return { ...state, projection: action.projection, error: null };
+    case "projection": {
+      const previous = state.projection;
+      const incoming = action.projection;
+      // A projection is a complete snapshot for one player at one room version.
+      if (previous?.public.room_id === incoming.public.room_id &&
+          previous.private.player_id === incoming.private.player_id &&
+          previous.public.version === incoming.public.version) {
+        return state.error === null ? state : { ...state, error: null };
+      }
+      return { ...state, projection: incoming, error: null };
+    }
     case "command-sent": return { ...state, pending: action.pending, error: null };
     case "command-acked": return state.pending?.requestId === action.requestId ? { ...state, pending: null, error: action.error ?? null } : state;
     case "connection-lost": return { ...state, status: "reconnecting", pending: null };

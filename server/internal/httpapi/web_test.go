@@ -5,7 +5,11 @@ import (
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"testing"
+	"time"
+
+	"github.com/gorilla/websocket"
 
 	"tripleagent/server/internal/room"
 )
@@ -161,51 +165,61 @@ func TestSessionActiveMapsToConflictForWebSocket(t *testing.T) {
 	}
 }
 
-func TestReleaseEndpointContract(t *testing.T) {
+func TestWebSocketClosePreservesSeatForReconnect(t *testing.T) {
 	registry := room.NewRegistry()
 	defer registry.Close()
-	handler := New(registry)
-
-	createdResponse := doJSON(t, handler, http.MethodPost, "/api/lobbies", `{"player_name":"Host"}`)
-	if createdResponse.Code != http.StatusCreated {
-		t.Fatalf("create status=%d body=%s", createdResponse.Code, createdResponse.Body.String())
-	}
-	var created lobbyResponse
-	if err := json.Unmarshal(createdResponse.Body.Bytes(), &created); err != nil {
+	created, err := registry.Create("Host")
+	if err != nil {
 		t.Fatal(err)
 	}
-
-	release := doJSON(t, handler, http.MethodPost, "/api/lobbies/release", `{"join_code":"`+created.JoinCode+`","reconnect_token":"`+created.ReconnectToken+`"}`)
-	if release.Code != http.StatusOK {
-		t.Fatalf("release status=%d body=%s", release.Code, release.Body.String())
-	}
-	var payload releaseLobbyResponse
-	if err := json.Unmarshal(release.Body.Bytes(), &payload); err != nil {
+	active, playerID, err := registry.Resolve(created.JoinCode, created.ReconnectToken)
+	if err != nil {
 		t.Fatal(err)
 	}
-	if !payload.Released {
-		t.Fatalf("release payload=%+v", payload)
+	server := httptest.NewServer(New(registry))
+	defer server.Close()
+	connect := func() *websocket.Conn {
+		t.Helper()
+		conn, _, err := websocket.DefaultDialer.Dial("ws"+strings.TrimPrefix(server.URL, "http")+"/ws?join_code="+created.JoinCode, nil)
+		if err != nil {
+			t.Fatal(err)
+		}
+		t.Cleanup(func() { _ = conn.Close() })
+		if err := conn.SetReadDeadline(time.Now().Add(2 * time.Second)); err != nil {
+			t.Fatal(err)
+		}
+		if err := conn.WriteJSON(authMessage{Kind: "room.auth", ReconnectToken: created.ReconnectToken}); err != nil {
+			t.Fatal(err)
+		}
+		var authenticated sessionAuthenticatedResponse
+		if err := conn.ReadJSON(&authenticated); err != nil {
+			t.Fatal(err)
+		}
+		if authenticated.Type != "session.authenticated" {
+			t.Fatalf("expected authentication, got %+v", authenticated)
+		}
+		return conn
 	}
-
-	idempotent := doJSON(t, handler, http.MethodPost, "/api/lobbies/release", `{"join_code":"`+created.JoinCode+`","reconnect_token":"`+created.ReconnectToken+`"}`)
-	if idempotent.Code != http.StatusOK {
-		t.Fatalf("idempotent release status=%d body=%s", idempotent.Code, idempotent.Body.String())
+	conn := connect()
+	if err := conn.WriteControl(websocket.CloseMessage, websocket.FormatCloseMessage(websocket.CloseNormalClosure, ""), time.Now().Add(time.Second)); err != nil {
+		t.Fatal(err)
 	}
-
-	unauthorized := doJSON(t, handler, http.MethodPost, "/api/lobbies/release", `{"join_code":"`+created.JoinCode+`","reconnect_token":"wrong"}`)
-	if unauthorized.Code != http.StatusUnauthorized {
-		t.Fatalf("bad token status=%d body=%s", unauthorized.Code, unauthorized.Body.String())
+	defer conn.Close()
+	deadline := time.Now().Add(2 * time.Second)
+	for {
+		projection, err := active.Snapshot(playerID)
+		if err != nil {
+			t.Fatalf("socket close removed the seat: %v", err)
+		}
+		if !projection.Public.Players[0].Connected {
+			break
+		}
+		if time.Now().After(deadline) {
+			t.Fatal("socket close did not detach the player")
+		}
+		time.Sleep(time.Millisecond)
 	}
-
-	missing := doJSON(t, handler, http.MethodPost, "/api/lobbies/release", `{"join_code":"NOPE","reconnect_token":"x"}`)
-	if missing.Code != http.StatusNotFound {
-		t.Fatalf("missing room status=%d body=%s", missing.Code, missing.Body.String())
-	}
-
-	badRequest := doJSON(t, handler, http.MethodPost, "/api/lobbies/release", `{"join_code":""}`)
-	if badRequest.Code != http.StatusBadRequest {
-		t.Fatalf("missing identity status=%d body=%s", badRequest.Code, badRequest.Body.String())
-	}
+	connect()
 }
 
 func TestCommandAckDoesNotExposeUnknownInternalError(t *testing.T) {

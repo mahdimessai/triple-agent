@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useRef, useSyncExternalStore } from "react";
+import { useEffect, useEffectEvent, useRef, useSyncExternalStore } from "react";
 import { createPortal } from "react-dom";
 import { operationBrief } from "../../operations";
 import { ArtStamp } from "../../ui";
@@ -25,20 +25,22 @@ export function DossierDialog({
 }) {
   const mounted = useIsMounted();
   const closeButtonRef = useRef<HTMLButtonElement | null>(null);
+  const isOpen = item !== null;
+  const closeFromKeyboard = useEffectEvent(onClose);
 
   useEffect(() => {
-    if (!item) return;
+    if (!isOpen) return;
     const previousFocus = document.activeElement instanceof HTMLElement ? document.activeElement : null;
     closeButtonRef.current?.focus();
     function handleKeyDown(event: KeyboardEvent): void {
-      if (event.key === "Escape") onClose();
+      if (event.key === "Escape") closeFromKeyboard();
     }
     window.addEventListener("keydown", handleKeyDown);
     return () => {
       window.removeEventListener("keydown", handleKeyDown);
       previousFocus?.focus();
     };
-  }, [item, onClose]);
+  }, [isOpen]);
 
   if (!item || !mounted) return null;
 

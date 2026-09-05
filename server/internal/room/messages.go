@@ -47,13 +47,6 @@ type DetachSessionCmd struct {
 
 func (DetachSessionCmd) isRoomMessage() {}
 
-type ReleaseSessionCmd struct {
-	Token string
-	Reply chan error
-}
-
-func (ReleaseSessionCmd) isRoomMessage() {}
-
 type ExecGameCmd struct {
 	PlayerID        string
 	SessionID       string
